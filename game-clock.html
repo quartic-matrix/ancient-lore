@@ -1,0 +1,285 @@
+<html>
+  <body>
+
+    <div id="buttons">
+      <div id="down-time-button" style="position: relative; top: 0; width:84; height:84; padding:8; ">
+        <svg id="svg-area" xmlns="http://www.w3.org/2000/svg" style="position: relative; width:84; height:84;">
+          <g>
+            <rect
+                id="down-time-rect"
+                class="button-rect"
+                rx="5"
+                ry="5"
+                y="2.5000043"
+                x="2.5"
+                height="80"
+                width="80"
+                style="opacity:1;vector-effect:none;fill:#75758a;fill-opacity:0.5;stroke:#5c5c5c;stroke-width:5;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" />
+            <text
+                id="down-time-label-text"
+                y="29.096361"
+                x="41.852322"
+                style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:11.28888893px;line-height:1.25;font-family:'Segoe UI';-inkscape-font-specification:'Segoe UI';text-align:center;letter-spacing:0px;word-spacing:0px;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+                xml:space="preserve"><tspan
+                  id="down-time-label"
+                  class="button-label"
+                  style="font-size:11.28888893px;text-align:center;text-anchor:middle;stroke-width:0.26458332"
+                  y="29.096361"
+                  x="41.852322">Down time</tspan></text>
+            <text
+                id="down-time-time-text"
+                y="54.624832"
+                x="42.496555"
+                style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:16.93333244px;line-height:1.25;font-family:'Segoe UI';-inkscape-font-specification:'Segoe UI';text-align:center;letter-spacing:0px;word-spacing:0px;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+                xml:space="preserve"><tspan
+                  style="font-size:16.93333244px;text-align:center;text-anchor:middle;stroke-width:0.26458332"
+                  y="54.624832"
+                  x="42.496555"
+                  id="down-time-time"
+                  class="timer">00:00:00</tspan></text>
+          </g>
+        </svg>
+      </div>
+    </div>
+    <div id="settings">
+    </div>
+
+
+    <script src="deploy/webrtc-swarm.js"></script> 
+    <script>
+      var sw;
+      var activeTimer;
+
+      if (true) {
+        sw = new WebRTCSwarm('swarm-example', ['https://quartic-matrix-signalhub.herokuapp.com/'])
+        var isMyFirstConnection = true;
+        var lastTimestamp = +(new Date());
+
+        if (!sw.WEBRTC_SUPPORT) {
+
+        }
+
+        sw.on('connect', function (peer, id) {
+          console.log('connected to a new peer:', id);
+          console.log('total peers:', sw.peers.length);
+
+          peer.on('error', function (err) { 
+            console.log('error', err); 
+          })
+          
+          peer.on('data', receive);
+
+          if (isMyFirstConnection) {
+            isMyFirstConnection = false;
+            if (!peer.initiator) {
+              var data = {type:"requestUpdate"};
+              var json = JSON.stringify(data);
+              peer.send(json);
+            }
+          }
+        })
+
+        sw.on('disconnect', function (peer, id) {
+          console.log('disconnected from a peer:', id)
+          console.log('total peers:', sw.peers.length)
+        })
+      }
+
+      document.addEventListener("onload",init(),false);
+
+      function init() {
+        let colours = generateHslaColors(70, 50, 1.0, 6);
+
+        for (var i = 0; i < colours.length; ++i) {
+          cloneButton(i, colours[i]);
+        };
+
+        var downTimeButton = document.getElementById("down-time-button");
+        setupButton(downTimeButton);
+        switchTo(downTimeButton);
+
+        setInterval(updateActiveTimer, 100);
+      }
+
+      function updateActiveTimer() {
+        if (!activeTimer) {
+          return;
+        }
+
+        var timestamp = +(new Date());
+        activeTimer.time = activeTimer.time + timestamp - lastTimestamp;
+        lastTimestamp = timestamp;
+
+        activeTimer.innerHTML = formatTime(activeTimer.time);
+      }
+
+      function updateIds(element, i) {
+        element.id = element.id.replace("down-time", "my-"+i);
+        var children = [].slice.call(element.children);
+        children.forEach(function (child) { updateIds(child, i); });
+      }
+
+      function setupButton(button) {
+        var timer = button.querySelector(".timer");
+        timer.time = 0;
+        button.addEventListener("click", function() { switchTo(button); });
+        
+        var label = button.querySelector(".button-label");
+        label.addEventListener("click", function() { rename(button); });
+      }
+
+      function cloneButton(i, colour) {
+        var newButton = document.getElementById("down-time-button").cloneNode(true);
+        updateIds(newButton, i);
+
+        var topPos = 0;// (100 + i*100);
+        //var move = "translate("+0+","+ (100+i*100) +")";
+        //newButton.setAttribute("transform", move);
+        newButton.style.top = topPos;
+        newButton.querySelector(".button-rect").style.fill = colour;
+        setupButton(newButton);
+        changeButtonName(newButton, i); 
+        document.getElementById("buttons").appendChild(newButton);
+      }
+
+      function generateHslaColors (saturation, lightness, alpha, amount) {
+        let colors = []
+        let huedelta = Math.trunc(360 / amount)
+
+        for (let i = 0; i < amount; i++) {
+          let hue = i * huedelta
+          colors.push(`hsla(${hue},${saturation}%,${lightness}%,${alpha})`)
+        }
+
+        return colors
+      }
+
+      function changeButtonName(button, i) {
+        button.querySelector(".button-label").innerHTML = "Button " + i;
+      }
+
+      function rename(button) {
+        var div = document.createElement( "div" ); 
+        div.style.position = "relative";
+
+        var textbox = document.createElement( "input" ); 
+        textbox.setAttribute("type" , "text" );
+        textbox.setAttribute("maxlength", 12);
+
+        var label = button.querySelector(".button-label");
+        var rect = label.getBoundingClientRect();
+        var labelWidth = rect.width+25;
+        textbox.style.height = rect.height+4;
+        textbox.style.width = labelWidth;
+        
+        textbox.setAttribute("value", label.innerHTML);
+
+        textbox.addEventListener("keyup", function(event) {
+          // Number 13 is the "Enter" key on the keyboard
+          if (event.keyCode === 13) {
+            // Cancel the default action, if needed
+            event.preventDefault();
+            
+            label.innerHTML = textbox.value;
+            div.parentNode.removeChild(div);
+
+            broadcastFullUpdate(activeTimer);
+          }
+        });
+
+        var leftPos = (84 - labelWidth)/2;
+        div.style.top = 14 - 84;
+        div.style.left = leftPos;
+
+        div.appendChild(textbox);
+        button.appendChild(div);
+        textbox.focus();
+        textbox.select();
+      }
+
+      function switchTo(button) {
+        var timer = button.querySelector(".timer")
+        var data = {type:"update", activeTimerId:timer.id};
+        pushTimerTimes(data);
+        broadcast(data);
+      }
+
+      function pushTimerTimes(data) {
+        data.timerTimes = [];
+        return document.querySelectorAll(".timer").forEach(function (timer) {
+          var timerTime = {id:timer.id, time:timer.time};
+          data.timerTimes.push(timerTime);
+        });
+      }
+
+      function pushButtonNames(data) {
+        data.buttonNames = [];
+        return document.querySelectorAll(".button-label").forEach(function (label) {
+          var buttonName = {id:label.id, name:label.innerHTML};
+          data.buttonNames.push(buttonName);
+        });
+      }
+
+      function broadcast(data) {
+        var json = JSON.stringify(data);
+        receive(json);
+        sw.peers.forEach(function (peer) {
+          peer.send(json);
+        });
+      }
+
+      function broadcastFullUpdate(activateTimer) {
+        var data = {type:"update", activeTimerId:activateTimer.id};
+        pushTimerTimes(data);
+        pushButtonNames(data);
+        broadcast(data);
+      }
+
+      function receive(json) {
+        var data = JSON.parse(json);
+        switch (data.type) {
+          case "requestUpdate": {
+            broadcastFullUpdate(activeTimer);
+            break;
+          }
+          case "update": {
+            doUpdate(data);
+            break;
+          }
+        }
+      }
+
+      function doUpdate(data) {
+        if (activeTimer) {
+          activeTimer.parentElement.parentElement.querySelector(".button-rect").style.stroke = "#5c5c5c";
+        }
+        activeTimer = document.getElementById(data.activeTimerId);
+        activeTimer.parentElement.parentElement.querySelector(".button-rect").style.stroke = "#aa0000";
+        data.timerTimes.forEach(function (timerTime) {
+          timer = document.getElementById(timerTime.id);
+          timer.time = timerTime.time;
+          timer.innerHTML = formatTime(timer.time);
+        }); 
+        if (data.buttonNames) {
+          data.buttonNames.forEach(function (buttonName) {
+            label = document.getElementById(buttonName.id);
+            label.innerHTML = buttonName.name;
+          }); 
+        }
+      }
+
+      function formatTime(timeInMs) {
+        var milliseconds = parseInt((timeInMs % 1000) / 100);
+        var seconds = Math.floor((timeInMs / 1000) % 60);
+        var minutes = Math.floor((timeInMs / (1000 * 60)) % 60);
+        var hours = Math.floor((timeInMs / (1000 * 60 * 60)) % 24);
+
+        return hours + ":" + makeTwoDigits(minutes) + ":" + makeTwoDigits(seconds) + "." + milliseconds;
+      }
+
+      function makeTwoDigits(number) {
+        return ("0" + number).slice(-2);
+      }
+    </script> 
+  </body>
+</html>

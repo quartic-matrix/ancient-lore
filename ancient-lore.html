@@ -1,0 +1,149 @@
+<html>
+  <body>
+
+    <div id="players">
+      <h1>Players</h1>
+      <div id="player-list">
+      </div>
+    </div>
+
+
+    <script src="deploy/webrtc-swarm.js"></script> 
+    <script src="scripts/events.js"></script> 
+    <script src="scripts/ancient-lore.js"></script> 
+    <script>
+      var sw;
+      var game;
+      var gameDisplay;
+
+      if (true) {
+        sw = new WebRTCSwarm('swarm-example', ['https://quartic-matrix-signalhub.herokuapp.com/'])
+        var isMyFirstConnection = true;
+        var lastTimestamp = +(new Date());
+
+        if (!sw.WEBRTC_SUPPORT) {
+
+        }
+
+        sw.on('connect', function (peer, id) {
+          console.log('connected to a new peer:', id);
+          console.log('total peers:', sw.peers.length);
+
+          peer.on('error', function (err) { 
+            console.log('error', err); 
+          })
+          
+          peer.on('data', receive);
+
+          if (isMyFirstConnection) {
+            isMyFirstConnection = false;
+            if (!peer.initiator) {
+              var data = {type:"request-update"};
+              var json = JSON.stringify(data);
+              peer.send(json);
+            }
+          }
+        })
+
+        sw.on('disconnect', function (peer, id) {
+          console.log('disconnected from a peer:', id)
+          console.log('total peers:', sw.peers.length)
+        })
+      } else {
+        sw = {};
+        sw.me = -1;
+        sw.peers = [];
+      }
+
+      document.addEventListener("onload",init(),false);
+
+      function init() {
+        let colours = generateHslaColors(70, 50, 1.0, 6);
+        
+        var url = new URL(window.location.href);
+        var playerName = url.searchParams.get("player");
+        if (!playerName) {
+          playerName = "<player-name>";
+        }
+
+        game = new AncientLoreGame();
+        game.eventLog.add(PeerJoinEvent.makeNow(0, sw.me, playerName));
+
+        gameDisplay = new AncientLoreDisplay("player-list");
+
+        // TODO remove
+        // {
+        //   var data = {type:"request-update"};
+        //   var json = JSON.stringify(data);
+        //   receive(json);
+        // }
+      }
+
+      function broadcast(data) {
+        var json = JSON.stringify(data);
+        receive(json);
+        sw.peers.forEach(function (peer) {
+          peer.send(json);
+        });
+      }
+
+      function broadcastFullUpdate() {
+        var data = {type:"do-update"};
+        game.pushEventLog(data);
+        broadcast(data);
+      }
+
+      function doUpdate(data) {
+        var eventLog = new EventLog();
+        data.eventLog.events.forEach(function (eventJson) {
+          gameEvent = eventFromJson(eventJson);
+          if (gameEvent) {
+            eventLog.add(gameEvent);
+          }
+        });
+        game.eventLog.merge(eventLog);
+        gameDisplay.clear();
+        game.eventLog.exportTo(gameDisplay);
+      }
+
+      function receive(json) {
+        var data = JSON.parse(json);
+        switch (data.type) {
+          case "request-update": {
+            broadcastFullUpdate();
+            break;
+          }
+          case "do-update": {
+            doUpdate(data);
+            break;
+          }
+        }
+      }
+
+      function generateHslaColors (saturation, lightness, alpha, amount) {
+        let colors = []
+        let huedelta = Math.trunc(360 / amount)
+
+        for (let i = 0; i < amount; i++) {
+          let hue = i * huedelta
+          colors.push(`hsla(${hue},${saturation}%,${lightness}%,${alpha})`)
+        }
+
+        return colors
+      }
+
+      function formatTime(timeInMs) {
+        var milliseconds = parseInt((timeInMs % 1000) / 100);
+        var seconds = Math.floor((timeInMs / 1000) % 60);
+        var minutes = Math.floor((timeInMs / (1000 * 60)) % 60);
+        var hours = Math.floor((timeInMs / (1000 * 60 * 60)) % 24);
+
+        return hours + ":" + makeTwoDigits(minutes) + ":" + makeTwoDigits(seconds) + "." + milliseconds;
+      }
+
+      function makeTwoDigits(number) {
+        return ("0" + number).slice(-2);
+      }
+    </script> 
+  </body>
+</html>
