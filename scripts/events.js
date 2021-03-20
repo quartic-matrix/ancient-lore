@@ -177,7 +177,7 @@ class SyncedEventLog extends EventLog {
   onReceive(data) {
     var otherEvents = [];
     data.events.forEach(function (eventJson) {
-      gameEvent = eventFromJson(eventJson);
+      var gameEvent = eventFromJson(eventJson);
       if (gameEvent) {
         otherEvents.push(gameEvent);
       }
