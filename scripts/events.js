@@ -134,7 +134,7 @@ class EventLog {
     var thisI = 0;
     var otherI = 0;
     while (thisI < this.events.length && otherI < otherEvents.length) {
-      switch (GameEvent.compare(this.events[thisI], otherEvents[otherI])) {
+      switch (Math.sign(GameEvent.compare(this.events[thisI], otherEvents[otherI]))) {
         case -1: {
           onlyInThis = this.events[thisI];
           ++thisI;
@@ -146,6 +146,7 @@ class EventLog {
           ++otherI;
           break;
         }
+        default: {throw "Unhandled case, infinite loop";}
       }
     }
     while (thisI < this.events.length) {
