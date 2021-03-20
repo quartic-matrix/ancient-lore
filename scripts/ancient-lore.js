@@ -3,18 +3,15 @@
 
 //import {EventLog, GameEventListener} from "./events.js"
 
-class AncientLoreGame {
-  constructor () {
-    this.eventLog = new EventLog();
+class AncientLoreGame extends Game {
+  constructor (swarm, playerName) {
+    super(swarm, playerName);
   }
 
-  pushEventLog(data) {
-    data.eventLog = this.eventLog;
-  }
 }
 
 
-class AncientLoreDisplay extends GameEventListener {
+class AncientLoreDisplay extends GameEventListener { 
   constructor (playerListElementId) {
     super();
     this.playerListElement = document.getElementById(playerListElementId);
@@ -30,5 +27,28 @@ class AncientLoreDisplay extends GameEventListener {
     para.appendChild(node);
     
     this.playerListElement.appendChild(para);
+  }
+}
+
+class AncientLoreDisplayUpdater extends EventLogListener {
+  constructor (display, eventLog) {
+    super();
+    this.display = display;
+    this.eventLog = eventLog;
+    this.eventLog.addListener(this);
+    this.fullUpdate();
+  }
+
+  fullUpdate() {
+    this.display.clear();
+    this.eventLog.exportTo(this.display);
+  }
+
+  onEventAdded(event, isLast) {
+    if (isLast) {
+      event.notify(this.display);
+    } else {
+      this.fullUpdate();
+    }
   }
 }
