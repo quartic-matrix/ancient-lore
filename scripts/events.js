@@ -99,13 +99,22 @@ class EventLog {
     this.listeners.push(listener);
   }
 
-  add(event) {
-    var i = 0;
-    for (i = this.events.length; i > 0; --i) {
-      switch (GameEvent.compare(event, this.events[i - 1])) {
+  findIndexFor(event) {
+    for (var i = this.events.length; i > 0; --i) {
+      switch (Math.sign(GameEvent.compare(event, this.events[i - 1]))) {
+        case -1: {break;} // Before event i-1, keep looking.
         case 0: {return false;} // Duplicate.
-        case 1: {break;}
+        case 1: {return i;}
+        default: {throw "Unhandled case";}
       }
+    }
+    return 0;
+  }
+
+  add(event) {
+    var i = this.findIndexFor(event);
+    if (i === false) {
+      return false;
     }
     this.events.splice(i, 0, event);
     this.listeners.forEach(function (listener) {
