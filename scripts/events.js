@@ -115,6 +115,9 @@ class EventLog {
   }
 
   addMultiple(events) {
+    if (events.length == 0) {
+      return;
+    }
     this.listeners.forEach(function (listener) {
       listener.onAddingEvents();
     });
@@ -187,7 +190,7 @@ class SyncedEventLog extends EventLog {
 
   merge(otherEvents, broadcastMissing) {
     var [onlyInThis, onlyInOther] = this.compare(otherEvents);
-    
+
     // Add those that are onlyInOther without broadcasting.
     super.addMultiple(onlyInOther);
 
