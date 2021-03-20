@@ -186,7 +186,8 @@ class SyncedEventLog extends EventLog {
   }
 
   merge(otherEvents, broadcastMissing) {
-    var [onlyInThis, onlyInOther] = compare(otherEvents);
+    var [onlyInThis, onlyInOther] = this.compare(otherEvents);
+    
     // Add those that are onlyInOther without broadcasting.
     super.addMultiple(onlyInOther);
 
