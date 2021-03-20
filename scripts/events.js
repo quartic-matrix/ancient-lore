@@ -219,11 +219,11 @@ class SyncedEventLog extends EventLog {
   }
   
   broadcastAllEvents() {
-    this.broadcast(dataForAllEvents());
+    this.broadcast(this.dataForAllEvents());
   }
 
   sendAllEventsTo(peer) {
-    var json = JSON.stringify(dataForAllEvents());
+    var json = JSON.stringify(this.dataForAllEvents());
     peer.send(json);
   }
 }
