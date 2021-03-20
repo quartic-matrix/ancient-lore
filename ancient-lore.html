@@ -36,10 +36,7 @@
               console.log('error', err); 
             })
             
-            peer.on('data', function (json) {
-              var data = JSON.parse(json);
-              game.onReceive(data);
-            });
+            peer.on('data', receive);
 
             game.onConnect(peer, id);
 
@@ -60,6 +57,11 @@
           swarm.peers = [];
         }
         return swarm;
+      }
+
+      function receive(json) {
+        var data = JSON.parse(json);
+        game.onReceive(data);
       }
 
       function init() {
