@@ -173,21 +173,6 @@ class GameClockDisplay {
     this.setupButton(downTimeButton);
   }
 
-  updateIds(element, i) {
-    element.id = element.id.replace("down-time", "my-"+i);
-    var children = [].slice.call(element.children);
-    children.forEach(function (child) { this.updateIds(child, i); }, this);
-  }
-
-  setupButton(button) {
-    var timer = button.querySelector(".timer");
-    timer.time = 0;
-    button.addEventListener("click", (function() { this.switchTo(button); }).bind(this));
-    
-    var label = button.querySelector(".button-label");
-    label.addEventListener("click", (function() { this.rename(button); }).bind(this));
-  }
-
   cloneButton(i, colour) {
     var newButton = document.getElementById("down-time-button").cloneNode(true);
     this.updateIds(newButton, i);
@@ -202,8 +187,29 @@ class GameClockDisplay {
     document.getElementById("buttons").appendChild(newButton);
   }
 
+  updateIds(element, i) {
+    element.id = element.id.replace("down-time", "my-"+i);
+    var children = [].slice.call(element.children);
+    children.forEach(function (child) { this.updateIds(child, i); }, this);
+  }
+
   changeButtonName(button, i) {
     button.querySelector(".button-label").innerHTML = "Button " + i;
+  }
+
+  setupButton(button) {
+    var timer = button.querySelector(".timer");
+    timer.time = 0;
+    button.addEventListener("click", (function() { this.switchTo(button); }).bind(this));
+    
+    var label = button.querySelector(".button-label");
+    label.addEventListener("click", (function() { this.rename(button); }).bind(this));
+  }
+
+  switchTo(button) {
+    this.eventLog.add(TimerActivateEvent.makeNow(
+      0, this.eventLog.swarm.myId, button.querySelector(".timer").id)
+    );
   }
 
   rename(button) {
@@ -222,7 +228,7 @@ class GameClockDisplay {
     
     textbox.setAttribute("value", label.innerHTML);
 
-    textbox.addEventListener("keyup", function(keyupEvent) {
+    textbox.addEventListener("keyup", (function(keyupEvent) {
       // Number 13 is the "Enter" key on the keyboard
       if (keyupEvent.keyCode === 13) {
         // Cancel the default action, if needed
@@ -234,7 +240,7 @@ class GameClockDisplay {
 
         div.parentNode.removeChild(div);
       }
-    });
+    }).bind(this));
 
     var leftPos = (84 - labelWidth)/2;
     div.style.top = 14 - 84;
@@ -244,11 +250,5 @@ class GameClockDisplay {
     button.appendChild(div);
     textbox.focus();
     textbox.select();
-  }
-
-  switchTo(button) {
-    this.eventLog.add(TimerActivateEvent.makeNow(
-      0, this.eventLog.swarm.myId, button.querySelector(".timer").id)
-    );
   }
 }
