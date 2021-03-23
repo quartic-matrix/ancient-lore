@@ -30,6 +30,7 @@ class MySwarm {
   }
 
   makeWebRTCSwarm(isOnline) {
+    var listeners = this.listeners;
     var swarm;
     if (isOnline) {
       swarm = new WebRTCSwarm('swarm-example', ['https://quartic-matrix-signalhub.herokuapp.com/'])
