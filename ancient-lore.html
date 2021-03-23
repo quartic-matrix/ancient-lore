@@ -12,57 +12,12 @@
     <script src="scripts/events.js"></script> 
     <script src="scripts/game-system.js"></script> 
     <script src="scripts/ancient-lore.js"></script> 
+    <script src="scripts/my-swarm.js"></script> 
     <script>
       var game;
       var gameDisplay;
 
       document.addEventListener("onload",init(),false);
-
-      function makeSwarm() {
-        var swarm;
-        if (true) {
-          swarm = new WebRTCSwarm('swarm-example', ['https://quartic-matrix-signalhub.herokuapp.com/'])
-          var isMyFirstConnection = true;
-
-          if (!swarm.WEBRTC_SUPPORT) {
-
-          }
-
-          swarm.on('connect', function (peer, id) {
-            console.log('connected to a new peer:', id);
-            console.log('total peers:', swarm.peers.length);
-
-            peer.on('error', function (err) { 
-              console.log('error', err); 
-            })
-            
-            peer.on('data', receive);
-
-            game.onConnect(peer, id);
-
-            // if (isMyFirstConnection) {
-            //   isMyFirstConnection = false;
-            //   var json = JSON.stringify(fullUpdateData());
-            //   peer.send(json);
-            // }
-          })
-
-          swarm.on('disconnect', function (peer, id) {
-            console.log('disconnected from a peer:', id)
-            console.log('total peers:', swarm.peers.length)
-          })
-        } else {
-          swarm = {};
-          swarm.me = -1;
-          swarm.peers = [];
-        }
-        return swarm;
-      }
-
-      function receive(json) {
-        var data = JSON.parse(json);
-        game.onReceive(data);
-      }
 
       function init() {
         var url = new URL(window.location.href);
@@ -73,7 +28,7 @@
 
         let colours = generateHslaColors(70, 50, 1.0, 6);
 
-        game = new AncientLoreGame(makeSwarm(), playerName);
+        game = new AncientLoreGame(makeSwarm(game), playerName);
 
         gameDisplay = new AncientLoreDisplayUpdater(
           new AncientLoreDisplay("player-list"), game.eventLog

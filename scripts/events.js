@@ -8,6 +8,8 @@
 class GameEventListener {
   constructor() {}
 
+  clear() {}
+
   onPeerJoins(asPlayerName) {}
 }
 
@@ -16,8 +18,15 @@ function strcmp(a, b)
     return (a<b?-1:(a>b?1:0));  
 }
 
-class GameEvent {
+class GameEventDef {
+  constructor() {}
 
+  static type() {};
+
+  static makeFromData(objectFromData) {};
+}
+
+class GameEvent {
   static makeTimestamp(timestampOffset) {
     var timestamp = +(new Date());
     return timestampOffset + timestamp;
@@ -37,43 +46,6 @@ class GameEvent {
       return strcmp(event0.peerId, event1.peerId);
     }
     return timestampDiff;
-  }
-}
-
-class PeerJoinEvent extends GameEvent {
-  static fromJSON(objectFromJSON) {
-    return new PeerJoinEvent(
-      objectFromJSON.timestamp,
-      objectFromJSON.peerId,
-      objectFromJSON.playerName
-    );
-  }
-
-  static makeNow(timestampOffset, peerId, playerName) {
-    return new PeerJoinEvent(
-      GameEvent.makeTimestamp(timestampOffset),
-      peerId,
-      playerName
-    );
-  }
-
-  constructor(timestamp, peerId, playerName) {
-    super(timestamp, peerId, "peer-joins");
-    this.playerName = playerName;
-  }
-
-  notify(eventListener) {
-    eventListener.onPeerJoins(this.playerName);
-  }
-}
-
-function eventFromJson(objectFromJSON) {
-  switch (objectFromJSON.type) {
-    case "peer-joins":
-      return PeerJoinEvent.fromJSON(objectFromJSON);
-  
-    default:
-      break;
   }
 }
 
@@ -117,8 +89,9 @@ class EventLog {
       return false;
     }
     this.events.splice(i, 0, event);
+    var isLast = i == this.events.length-1;
     this.listeners.forEach(function (listener) {
-      listener.onEventAdded(event, i == this.events.length-1);
+      listener.onEventAdded(event, isLast);
     });
     return true;
   }
@@ -180,6 +153,16 @@ class SyncedEventLog extends EventLog {
   constructor(swarm) {
     super();
     this.swarm = swarm;
+    swarm.addListener(this);
+    this.eventTypeMap = new Map();
+  }
+
+  registerEventType(eventDef) {
+    this.eventTypeMap.set(eventDef.type(), eventDef);
+  }
+
+  makeEventFromData(data) {
+    this.eventTypeMap.get(data.type).makeFromData(data);
   }
 
   add(event) {
@@ -187,10 +170,24 @@ class SyncedEventLog extends EventLog {
     this.broadcastEvents([event]);
   }
 
+  dataType() {
+    return "events";
+  }
+
+  onConnect(peer, id) {
+    this.sendAllEventsTo(peer);
+  }
+
+  onDisconnect(peer, id) {}
+
   onReceive(data) {
+    if (data.type != this.dataType()) {
+      return; // `data` is not for this.
+    }
+
     var otherEvents = [];
-    data.events.forEach(function (eventJson) {
-      var gameEvent = eventFromJson(eventJson);
+    data.events.forEach(function (eventData) {
+      var gameEvent = this.makeEventFromData(eventData);
       if (gameEvent) {
         otherEvents.push(gameEvent);
       }
@@ -210,36 +207,29 @@ class SyncedEventLog extends EventLog {
       this.broadcastEvents(onlyInThis);
     }
   }
-
-  broadcast(data) {
-    var json = JSON.stringify(data);
-    this.swarm.peers.forEach(function (peer) {
-      peer.send(json);
-    });
-  }
   
   broadcastEvents(events) {
-    var data = {type: "events"};
+    var data = {type: this.dataType()};
     data.isAllEvents = false;
     data.events = events;
-    this.broadcast(data);
+    this.swarm.broadcast(data);
+  }
+  
+  broadcastAllEvents() {
+    this.swarm.broadcast(this.dataForAllEvents());
+  }
+
+  sendAllEventsTo(peer) {
+    this.swarm.send(peer, this.dataForAllEvents());
   }
 
   dataForAllEvents() {
-    var data = {type: "events"};
+    var data = {type: this.dataType()};
     data.isAllEvents = true;
     data.events = this.events;
     return data;
   }
-  
-  broadcastAllEvents() {
-    this.broadcast(this.dataForAllEvents());
-  }
 
-  sendAllEventsTo(peer) {
-    var json = JSON.stringify(this.dataForAllEvents());
-    peer.send(json);
-  }
 }
 
 

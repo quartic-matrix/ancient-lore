@@ -12,12 +12,12 @@ class AncientLoreGame extends Game {
 
 
 class AncientLoreDisplay extends GameEventListener { 
-  constructor (playerListElementId) {
+  constructor(playerListElementId) {
     super();
     this.playerListElement = document.getElementById(playerListElementId);
   }
 
-  clear () {
+  clear() {
     this.playerListElement.innerHTML = "";
   }
 
@@ -31,7 +31,7 @@ class AncientLoreDisplay extends GameEventListener {
 }
 
 class AncientLoreDisplayUpdater extends EventLogListener {
-  constructor (display, eventLog) {
+  constructor(display, eventLog) {
     super();
     this.display = display;
     this.eventLog = eventLog;
