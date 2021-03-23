@@ -5,6 +5,7 @@ class MySwarm {
   constructor(isOnline) {
     this.listeners = [];
     this.swarm = this.makeWebRTCSwarm(isOnline);
+    this.myId = this.swarm.me;
   }
 
   /**

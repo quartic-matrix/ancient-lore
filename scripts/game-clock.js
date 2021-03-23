@@ -229,7 +229,7 @@ class GameClockDisplay {
         keyupEvent.preventDefault();
         
         this.eventLog.add(TimerRenameEvent.makeNow(
-          0, this.eventLog.swarm.me, label.id, textbox.value)
+          0, this.eventLog.swarm.myId, label.id, textbox.value)
         );
 
         div.parentNode.removeChild(div);
@@ -248,7 +248,7 @@ class GameClockDisplay {
 
   switchTo(button) {
     this.eventLog.add(TimerActivateEvent.makeNow(
-      0, this.eventLog.swarm.me, button.querySelector(".timer").id)
+      0, this.eventLog.swarm.myId, button.querySelector(".timer").id)
     );
   }
 }

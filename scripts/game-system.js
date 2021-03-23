@@ -42,7 +42,9 @@ class Game {
   constructor(eventLog, playerName) {
     this.eventLog = eventLog;
     this.eventLog.registerEventType(PeerJoinEventDef);
-    this.eventLog.add(PeerJoinEvent.makeNow(0, this.eventLog.swarm.me, playerName));
+    this.eventLog.add(PeerJoinEvent.makeNow(
+      0, this.eventLog.swarm.myId, playerName
+    ));
   }
 }
 

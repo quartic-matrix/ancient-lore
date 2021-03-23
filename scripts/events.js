@@ -149,6 +149,22 @@ class EventLog {
   }
 }
 
+function flattenObject(obj) {   
+  var result = {};   
+  for(var key in obj) {       
+    result[key] = obj[key];   
+  }   
+  return result; 
+}
+
+function flattenEachIn(array) {
+  var flatArray = [];
+  array.forEach(function (event) {
+    flatArray.push(flattenObject(event));
+  });
+  return flatArray;
+}
+
 class SyncedEventLog extends EventLog {
   constructor(swarm) {
     super();
@@ -186,12 +202,12 @@ class SyncedEventLog extends EventLog {
     }
 
     var otherEvents = [];
-    data.events.forEach(function (eventData) {
+    data.events.forEach((function (eventData) {
       var gameEvent = this.makeEventFromData(eventData);
       if (gameEvent) {
         otherEvents.push(gameEvent);
       }
-    });
+    }).bind(this));
     this.merge(otherEvents, data.isAllEvents);
   }
 
@@ -207,11 +223,11 @@ class SyncedEventLog extends EventLog {
       this.broadcastEvents(onlyInThis);
     }
   }
-  
+
   broadcastEvents(events) {
     var data = {type: this.dataType()};
     data.isAllEvents = false;
-    data.events = events;
+    data.events = flattenEachIn(events);
     this.swarm.broadcast(data);
   }
   
@@ -220,13 +236,13 @@ class SyncedEventLog extends EventLog {
   }
 
   sendAllEventsTo(peer) {
-    this.swarm.send(peer, this.dataForAllEvents());
+    this.swarm.sendTo(peer, this.dataForAllEvents());
   }
 
   dataForAllEvents() {
     var data = {type: this.dataType()};
     data.isAllEvents = true;
-    data.events = this.events;
+    data.events = flattenEachIn(this.events);
     return data;
   }
 
