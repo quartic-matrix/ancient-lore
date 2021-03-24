@@ -33,15 +33,15 @@ class PeerJoinEvent extends GameEvent {
   }
 }
 
-class BasicGameEventListener extends GameEventListener {
-  constructor() {
-    super();
-  }
+class BasicGameEventListener {
+  constructor() {}
+
+  clear() {}
 
   onPeerJoins(playerName) {}
 }
 
-class Game {
+class BasicGame {
   constructor(eventLog, playerName) {
     this.eventLog = eventLog;
     this.eventLog.registerEventType(PeerJoinEvent);
@@ -51,7 +51,7 @@ class Game {
   }
 }
 
-class GameDisplayUpdater extends EventLogListener {
+class GameEventListenerUpdater extends EventLogListener {
   constructor(eventListener, eventLog) {
     super();
     this.eventListener = eventListener;

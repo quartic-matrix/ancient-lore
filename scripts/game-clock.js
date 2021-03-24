@@ -84,15 +84,15 @@ class TimerActivateEvent extends GameEvent {
   }
 }
 
-class GameClock extends Game {
+class GameClock extends BasicGame {
   constructor(eventLog) {
     super(eventLog, "<player-name>");
   }
 }
 
-class GameClockUpdater extends GameDisplayUpdater {
-  constructor(eventListener, eventLog) {
-    super(eventListener, eventLog);
+class GameClockBoardUpdater extends GameEventListenerUpdater {
+  constructor(gameClockBoard, eventLog) {
+    super(gameClockBoard, eventLog);
   }
 }
 
@@ -113,13 +113,13 @@ class GameClockBoard extends BasicGameEventListener {
     }
     this.activeTimer = undefined;
     this.lastTimestamp = 0;
-    this.domElement.querySelectorAll(".button").forEach(function (timer) {
+    this.domElement.querySelectorAll(".button").forEach((timer) => {
       timer.time = 0;
     });
-    this.domElement.querySelectorAll(".time-display").forEach(function (timer) {
+    this.domElement.querySelectorAll(".time-display").forEach((timer) => {
       timer.innerHTML = "00:00:00";
     });
-    this.domElement.querySelectorAll(".button-label").forEach(function (label) {
+    this.domElement.querySelectorAll(".button-label").forEach((label) => {
       label.innerHTML = "Timer";
     });
   }
@@ -194,22 +194,20 @@ class GameClockDisplay {
 
     var timer = button.querySelector(".time-display");
     timer.time = 0;
-    button.addEventListener("click", (function(event) { 
+    button.addEventListener("click", (event) => { 
       this.switchTo(button); 
-    }).bind(this));
+    });
     
     var label = button.querySelector(".button-label");
-    label.addEventListener("click", (function(event) { 
+    label.addEventListener("click", (event) => { 
       event.stopPropagation();
       this.rename(button); 
-    }).bind(this));
+    });
   }
 
   setLocalIds(element, i) {
     element.localId = ".timer-"+i;
     element.className += " timer-"+i;
-    // var children = [].slice.call(element.children);
-    // children.forEach(function (child) { this.updateIds(child, i); }, this);
   }
 
   switchTo(button) {
@@ -234,7 +232,7 @@ class GameClockDisplay {
     
     textbox.setAttribute("value", label.innerHTML);
 
-    textbox.addEventListener("keyup", (function(keyupEvent) {
+    textbox.addEventListener("keyup", (keyupEvent) => {
       keyupEvent.stopPropagation();
       // Number 13 is the "Enter" key on the keyboard
       if (keyupEvent.keyCode === 13) {
@@ -247,9 +245,9 @@ class GameClockDisplay {
 
         div.parentNode.removeChild(div);
       }
-    }).bind(this));
+    });
 
-    textbox.addEventListener("click", function(event) { 
+    textbox.addEventListener("click", (event) => { 
       event.stopPropagation();
     });
 

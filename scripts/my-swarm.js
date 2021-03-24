@@ -22,20 +22,20 @@ class MySwarm {
   sendTo(peer, data) {}
 
   onConnect(peer, id) {
-    this.listeners.forEach(listener => {
+    this.listeners.forEach((listener) => {
       listener.onConnect(peer, id);
     });
   }
 
   onReceive(json, fromPeer) {
     var data = JSON.parse(json);
-    this.listeners.forEach(listener => {
+    this.listeners.forEach((listener) => {
       listener.onReceive(data, fromPeer);
     });
   }
   
   onDisconnect(peer, id) {
-    this.listeners.forEach(listener => {
+    this.listeners.forEach((listener) => {
       listener.onDisconnect(peer, id);
     });
   }
@@ -51,7 +51,7 @@ class WebSwarm extends MySwarm {
 
   broadcast(data) {
     var json = JSON.stringify(data);
-    this.rtcSwarm.peers.forEach(function (peer) {
+    this.rtcSwarm.peers.forEach((peer) => {
       peer.send(json);
     });
   }
@@ -68,27 +68,27 @@ class WebSwarm extends MySwarm {
 
     }
 
-    swarm.on('connect', (function (peer, id) {
+    swarm.on('connect', (peer, id) => {
       console.log('connected to a new peer:', id);
       console.log('total peers:', swarm.peers.length);
 
-      peer.on('error', function (err) { 
+      peer.on('error', (err) => { 
         console.log('error', err); 
-      })
+      });
 
-      peer.on('data', (function (json) {
+      peer.on('data', (json) => {
         this.onReceive(json, peer);
-      }).bind(this));
+      });
 
       this.onConnect(peer, id);
-    }).bind(this))
+    });
 
-    swarm.on('disconnect', (function (peer, id) {
+    swarm.on('disconnect', (peer, id) => {
       console.log('disconnected from a peer:', id)
       console.log('total peers:', swarm.peers.length)
       
       this.onDisconnect(peer, id);
-    }).bind(this))
+    })
 
     return swarm;
   }
@@ -113,7 +113,7 @@ class FakeSwarm extends MySwarm {
 
   broadcast(data) {
     var json = JSON.stringify(data);
-    this.peers.forEach(function (peer) {
+    this.peers.forEach((peer) => {
       peer.onReceive(json, this);
     });
   }
@@ -146,7 +146,7 @@ class FakeServer {
   }
 
   connect(initiator) {
-    this.fakeSwarms.forEach(function (other) {
+    this.fakeSwarms.forEach((other) => {
       other.connect(initiator, initiator.myId);
       initiator.connect(other, other.myId);
     });
@@ -155,7 +155,7 @@ class FakeServer {
 
   disconnect(initiator) {
     removeFromArray(this.fakeSwarms, initiator);
-    this.fakeSwarms.forEach(function (other) {
+    this.fakeSwarms.forEach((other) => {
       initiator.disconnect(other, other.myId);
       other.disconnect(initiator, initiator.myId);
     });

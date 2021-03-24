@@ -72,8 +72,9 @@
 
         var clock = {};
         clock.gameClockDisplay = new GameClockDisplay(eventLog, domElement);
-        clock.gameClockUpdater = new GameClockUpdater(
-          new GameClockBoard(domElement), eventLog
+        clock.gameClockBoard = new GameClockBoard(domElement);
+        clock.gameClockBoardUpdater = new GameClockBoardUpdater(
+          clock.gameClockBoard, eventLog
         );
         clock.gameClock = new GameClock(eventLog);
         return clock;

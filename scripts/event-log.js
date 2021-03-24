@@ -1,19 +1,6 @@
 
 'use strict'
 
-/**
- * The functions that may be called for something that will be passed to 
- *    EventLog::exportTo()
- */
-class GameEventListener {
-  constructor() {}
-
-  clear() {}
-  
-  // Derived classes must provide the on...() functions that will be called
-  // by events stored in an EventLog.
-}
-
 function strcmp(a, b)
 {   
     return (a<b?-1:(a>b?1:0));  
@@ -66,18 +53,6 @@ class EventLog {
     this.listeners.push(listener);
   }
 
-  findIndexFor(event) {
-    for (var i = this.events.length; i > 0; --i) {
-      switch (Math.sign(GameEvent.compare(event, this.events[i - 1]))) {
-        case -1: {break;} // Before event i-1, keep looking.
-        case 0: {return false;} // Duplicate.
-        case 1: {return i;}
-        default: {throw "Unhandled case";}
-      }
-    }
-    return 0;
-  }
-
   add(event) {
     var i = this.findIndexFor(event);
     if (i === false) {
@@ -85,7 +60,7 @@ class EventLog {
     }
     this.events.splice(i, 0, event);
     var isLast = i == this.events.length-1;
-    this.listeners.forEach(function (listener) {
+    this.listeners.forEach((listener) => {
       listener.onEventAdded(event, isLast);
     });
     return true;
@@ -96,17 +71,23 @@ class EventLog {
       return;
     }
     
-    this.listeners.forEach(function (listener) {
+    this.listeners.forEach((listener) => {
       listener.onAddingEvents();
     });
 
     events.forEach(this.add.bind(this));
 
-    this.listeners.forEach(function (listener) {
+    this.listeners.forEach((listener) => {
       listener.onEventsAdded();
     });
   }
 
+  /**
+   * @param {*} otherEvents an array of GameEvents.
+   * @returns [onlyInThis, onlyInOther] where:
+   *    onlyInThis is an array of all the events that are only in this.
+   *    onlyInOther is an array of all the events that are only in otherEvents.
+   */
   compare(otherEvents) {
     var onlyInThis = [];
     var onlyInOther = [];
@@ -140,10 +121,28 @@ class EventLog {
     return [onlyInThis, onlyInOther];
   }
 
+  /**
+   * @param {*} gameEventListener requires:
+   *    Everything used by event.notify() for all events added to this.
+   */
   exportTo(gameEventListener) {
-    this.events.forEach(function (event) {
+    this.events.forEach((event) => {
       event.notify(gameEventListener);
     });
+  }
+
+  //-----
+
+  findIndexFor(event) {
+    for (var i = this.events.length; i > 0; --i) {
+      switch (Math.sign(GameEvent.compare(event, this.events[i - 1]))) {
+        case -1: {break;} // Before event i-1, keep looking.
+        case 0: {return false;} // Duplicate.
+        case 1: {return i;}
+        default: {throw "Unhandled case";}
+      }
+    }
+    return 0;
   }
 }
 
@@ -157,7 +156,7 @@ function flattenObject(obj) {
 
 function flattenEachIn(array) {
   var flatArray = [];
-  array.forEach(function (event) {
+  array.forEach((event) => {
     flatArray.push(flattenObject(event));
   });
   return flatArray;
@@ -171,37 +170,49 @@ class SyncedEventLog {
     this.log = new EventLog();
   }
 
-  //  Requires:
-  //    eventDef.type();
-  //    eventDef.makeFromData(data);
-  //      where data == flattenObject(event)
-  //      returns a GameEvent
+  /**
+   * @param {*} eventDef requires:
+   *    type()
+   *    makeFromData(data):
+   *      data == flattenObject(event with type matching eventDef)
+   *      Returns a GameEvent.
+   */
   registerEventType(eventDef) {
     this.eventTypeMap.set(eventDef.type(), eventDef);
   }
 
+  /**
+   * @param {*} listener requires:
+   *    Everything declared in EventLogListener.
+   */
   addListener(listener) {
     this.log.addListener(listener);
   }
 
+  /**
+   * 
+   * @param {*} event requires:
+   *    To extend or be usable in place of GameEvent.
+   *    For notify(gameEventListener), see EventLog.exportTo().
+   */
   add(event) {
     this.log.add(event);
     this.broadcastEvents([event]);
   }
   
+  /**
+   * @param {*} gameEventListener see EventLog.exportTo().
+   */
   exportTo(gameEventListener) {
     this.log.exportTo(gameEventListener);
   }
 
+  //-----
 
-  dataType() {
-    return "events";
-  }
-
-  makeEventFromData(data) {
-    return this.eventTypeMap.get(data.type).makeFromData(data);
-  }
-
+  /**
+   * See MySwarm.addListener().
+   */
+  /// @{
   onConnect(peer, id) {
     this.sendAllEventsTo(peer);
   }
@@ -214,13 +225,22 @@ class SyncedEventLog {
     }
 
     var otherEvents = [];
-    data.events.forEach((function (eventData) {
+    data.events.forEach((eventData) => {
       var gameEvent = this.makeEventFromData(eventData);
       if (gameEvent) {
         otherEvents.push(gameEvent);
       }
-    }).bind(this));
+    });
     this.merge(otherEvents, data.isAllEvents);
+  }
+  /// @}
+  
+  dataType() {
+    return "events";
+  }
+
+  makeEventFromData(data) {
+    return this.eventTypeMap.get(data.type).makeFromData(data);
   }
 
   merge(otherEvents, broadcastMissing) {
