@@ -1,12 +1,11 @@
 <html>
   <body>
 
-    <div id="buttons">
-      <div id="down-time-button" style="position: relative; top: 0; width:84; height:84; padding:8; ">
-        <svg id="svg-area" xmlns="http://www.w3.org/2000/svg" style="position: relative; width:84; height:84;">
+    <div id="buttons-0" style="position: relative; float: left;">
+      <div class="button" style="position: relative; top: 0; width:84; height:84; padding:8; ">
+        <svg xmlns="http://www.w3.org/2000/svg" style="position: relative; width:84; height:84;">
           <g>
             <rect
-                id="down-time-rect"
                 class="button-rect"
                 rx="5"
                 ry="5"
@@ -16,18 +15,15 @@
                 width="80"
                 style="opacity:1;vector-effect:none;fill:#75758a;fill-opacity:0.5;stroke:#5c5c5c;stroke-width:5;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" />
             <text
-                id="down-time-label-text"
                 y="29.096361"
                 x="41.852322"
                 style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:11.28888893px;line-height:1.25;font-family:'Segoe UI';-inkscape-font-specification:'Segoe UI';text-align:center;letter-spacing:0px;word-spacing:0px;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
                 xml:space="preserve"><tspan
-                  id="down-time-label"
                   class="button-label"
                   style="font-size:11.28888893px;text-align:center;text-anchor:middle;stroke-width:0.26458332"
                   y="29.096361"
                   x="41.852322">Down time</tspan></text>
             <text
-                id="down-time-time-text"
                 y="54.624832"
                 x="42.496555"
                 style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:16.93333244px;line-height:1.25;font-family:'Segoe UI';-inkscape-font-specification:'Segoe UI';text-align:center;letter-spacing:0px;word-spacing:0px;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
@@ -35,8 +31,7 @@
                   style="font-size:16.93333244px;text-align:center;text-anchor:middle;stroke-width:0.26458332"
                   y="54.624832"
                   x="42.496555"
-                  id="down-time-time"
-                  class="timer">00:00:00</tspan></text>
+                  class="time-display">00:00:00</tspan></text>
           </g>
         </svg>
       </div>
@@ -51,27 +46,39 @@
     <script src="scripts/game-system.js"></script> 
     <script src="scripts/game-clock.js"></script> 
     <script>
-      var gameClock;
-      var gameClockDisplay;
-      var gameClockUpdater;
+      var clocks = [];
+      // var fakeServer = new FakeServer();
 
       document.addEventListener("onload",init(),false);
 
       function init() {
-        var isOnline = true;
-        var swarm = new MySwarm(isOnline);
+        var domElement0 = document.getElementById("buttons-0");
+        var domElement1 = domElement0.cloneNode(true);
+        domElement1.id = "buttons-1";
+        domElement0.parentElement.appendChild(domElement1);
 
+        clocks.push(createGameClock(domElement0));
+        clocks.push(createGameClock(domElement1));
+      }
+
+      function createGameClock(domElement) {
+        if (typeof fakeServer !== "undefined") {
+          var swarm = new FakeSwarm();
+          fakeServer.connect(swarm);
+        } else {
+          var swarm = new WebSwarm();
+        }
         var eventLog = new SyncedEventLog(swarm); 
 
-        gameClockDisplay = new GameClockDisplay(eventLog);
-
-        gameClockUpdater = new GameClockUpdater(
-          new GameClockBoard(), eventLog
+        var clock = {};
+        clock.gameClockDisplay = new GameClockDisplay(eventLog, domElement);
+        clock.gameClockUpdater = new GameClockUpdater(
+          new GameClockBoard(domElement), eventLog
         );
-
-        gameClock = new GameClock(eventLog);
-
+        clock.gameClock = new GameClock(eventLog);
+        return clock;
       }
+
     </script> 
   </body>
 </html>

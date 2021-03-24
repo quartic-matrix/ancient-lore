@@ -27,62 +27,55 @@ function makeTwoDigits(number) {
   return ("0" + number).slice(-2);
 }
 
-class TimerRenameEventDef extends GameEventDef {
-  constructor () {super();}
-
-  static makeFromData(data) {
-    return new TimerRenameEvent(data.labelId, data.newName);
-  }
+class TimerRenameEvent extends GameEvent {
 
   static type() {
     return "timer-rename";
   }
-}
 
-class TimerRenameEvent extends GameEvent {
-  static makeNow(timestampOffset, peerId, labelId, newName) {
+  static makeFromData(data) {
     return new TimerRenameEvent(
-      GameEvent.makeTimestamp(timestampOffset),
-      peerId,
-      labelId, 
-      newName
+      data.timestamp, data.peerId, data.timerId, data.newName
     );
   }
 
-  constructor(timestamp, peerId, labelId, newName) {
-    super(timestamp, peerId, TimerRenameEventDef.type());
-    this.labelId = labelId; 
+  static makeNow(timestampOffset, peerId, timerId, newName) {
+    return new TimerRenameEvent(
+      GameEvent.makeTimestamp(timestampOffset), peerId, timerId, newName
+    );
+  }
+
+  constructor(timestamp, peerId, timerId, newName) {
+    super(timestamp, peerId, TimerRenameEvent.type());
+    this.timerId = timerId; 
     this.newName = newName;
   }
 
   notify(eventListener) {
-    eventListener.onRenameTimer(this.labelId, this.newName)
-  }
-}
-
-class TimerActivateEventDef extends GameEventDef {
-  constructor () {super();}
-
-  static makeFromData(data) {
-    return new TimerActivateEvent(data.timerId);
-  }
-
-  static type() {
-    return "timer-activate";
+    eventListener.onRenameTimer(this.timerId, this.newName)
   }
 }
 
 class TimerActivateEvent extends GameEvent {
+
+  static type() {
+    return "timer-activate";
+  }
+
+  static makeFromData(data) {
+    return new TimerActivateEvent(
+      data.timestamp, data.peerId, data.timerId
+    );
+  }
+
   static makeNow(timestampOffset, peerId, timerId) {
     return new TimerActivateEvent(
-      GameEvent.makeTimestamp(timestampOffset),
-      peerId,
-      timerId
+      GameEvent.makeTimestamp(timestampOffset), peerId, timerId
     );
   }
 
   constructor(timestamp, peerId, timerId) {
-    super(timestamp, peerId, TimerActivateEventDef.type());
+    super(timestamp, peerId, TimerActivateEvent.type());
     this.timerId = timerId;
   }
 
@@ -94,8 +87,6 @@ class TimerActivateEvent extends GameEvent {
 class GameClock extends Game {
   constructor(eventLog) {
     super(eventLog, "<player-name>");
-    this.eventLog.registerEventType(TimerRenameEventDef);
-    this.eventLog.registerEventType(TimerActivateEventDef);
   }
 }
 
@@ -105,14 +96,15 @@ class GameClockUpdater extends GameDisplayUpdater {
   }
 }
 
-class GameClockBoard extends GameEventListener {
-  constructor() {
+class GameClockBoard extends BasicGameEventListener {
+  constructor(domElement) {
     super();
+    this.domElement = domElement;
     this.activeTimer;
     this.lastTimestamp = 0;
     this.activeTimestamp = +(new Date());
 
-    setInterval(this.updateActiveTimer.bind(this), 100);
+    setInterval(this.updateActiveTimer.bind(this), 101);
   }
 
   clear() {
@@ -121,29 +113,31 @@ class GameClockBoard extends GameEventListener {
     }
     this.activeTimer = undefined;
     this.lastTimestamp = 0;
-    document.querySelectorAll(".timer").forEach(function (timer) {
+    this.domElement.querySelectorAll(".button").forEach(function (timer) {
       timer.time = 0;
+    });
+    this.domElement.querySelectorAll(".time-display").forEach(function (timer) {
       timer.innerHTML = "00:00:00";
     });
-    document.querySelectorAll(".button-label").forEach(function (label) {
+    this.domElement.querySelectorAll(".button-label").forEach(function (label) {
       label.innerHTML = "Timer";
     });
   }
 
-  onRenameTimer(labelId, newName) {
-    label = document.getElementById(labelId);
+  onRenameTimer(timerId, newName) {
+    var label = this.domElement.querySelector(timerId).querySelector(".button-label");
     label.innerHTML = newName;
   }
   
   onActivateTimer(timerId, timestamp) {
     if (this.activeTimer) {
-      this.activeTimer.parentElement.parentElement.querySelector(".button-rect").style.stroke = "#5c5c5c";
+      this.setTimerHighlight("#5c5c5c");
       this.activeTimer.time += timestamp - this.lastTimestamp;
-      this.activeTimer.innerHTML = formatTime(this.activeTimer.time);
+      this.setTimerTime(this.activeTimer.time);
     }
     this.lastTimestamp = timestamp;
-    this.activeTimer = document.getElementById(timerId);
-    this.activeTimer.parentElement.parentElement.querySelector(".button-rect").style.stroke = "#aa0000";
+    this.activeTimer = this.domElement.querySelector(timerId);
+    this.setTimerHighlight("#aa0000");
     this.activeTimer.activeTime = 0;
   }
 
@@ -152,63 +146,75 @@ class GameClockBoard extends GameEventListener {
 
     if (this.activeTimer) {
       this.activeTimer.activeTime += timestamp - this.activeTimestamp;
-      this.activeTimer.innerHTML = formatTime(this.activeTimer.time + this.activeTimer.activeTime);
+      this.setTimerTime(this.activeTimer.time + this.activeTimer.activeTime);
     }
     
     this.activeTimestamp = timestamp;
   }
+
+  setTimerHighlight(colour) {
+    this.activeTimer.querySelector(".button-rect").style.stroke = colour;
+  }
+
+  setTimerTime(timeInMs) {
+    this.activeTimer.querySelector(".time-display").innerHTML = formatTime(timeInMs);
+  }
 }
 
 class GameClockDisplay {
-  constructor(eventLog) {
+  constructor(eventLog, domElement) {
     this.eventLog = eventLog;
+    this.domElement = domElement;
+    this.templateButton = this.getElement(".button");
+
+    this.eventLog.registerEventType(TimerRenameEvent);
+    this.eventLog.registerEventType(TimerActivateEvent);
 
     let colours = generateHslaColors(70, 50, 1.0, 6);
-
     for (var i = 0; i < colours.length; ++i) {
-      this.cloneButton(i, colours[i]);
+      this.cloneButton(i+1, colours[i]);
     };
 
-    var downTimeButton = document.getElementById("down-time-button");
-    this.setupButton(downTimeButton);
+    this.setupButton(this.templateButton, 0, "#75758a");
+  }
+
+  getElement(selectorString) {
+    return this.domElement.querySelector(selectorString);
   }
 
   cloneButton(i, colour) {
-    var newButton = document.getElementById("down-time-button").cloneNode(true);
-    this.updateIds(newButton, i);
-
-    var topPos = 0;// (100 + i*100);
-    //var move = "translate("+0+","+ (100+i*100) +")";
-    //newButton.setAttribute("transform", move);
-    newButton.style.top = topPos;
-    newButton.querySelector(".button-rect").style.fill = colour;
-    this.setupButton(newButton);
-    this.changeButtonName(newButton, i); 
-    document.getElementById("buttons").appendChild(newButton);
+    var newButton = this.templateButton.cloneNode(true);
+    this.setupButton(newButton, i, colour);
+    this.domElement.appendChild(newButton);
   }
 
-  updateIds(element, i) {
-    element.id = element.id.replace("down-time", "my-"+i);
-    var children = [].slice.call(element.children);
-    children.forEach(function (child) { this.updateIds(child, i); }, this);
-  }
+  setupButton(button, i, colour) {
+    this.setLocalIds(button, i);
+    button.querySelector(".button-rect").style.fill = colour;
 
-  changeButtonName(button, i) {
-    button.querySelector(".button-label").innerHTML = "Button " + i;
-  }
-
-  setupButton(button) {
-    var timer = button.querySelector(".timer");
+    var timer = button.querySelector(".time-display");
     timer.time = 0;
-    button.addEventListener("click", (function() { this.switchTo(button); }).bind(this));
+    button.addEventListener("click", (function(event) { 
+      this.switchTo(button); 
+    }).bind(this));
     
     var label = button.querySelector(".button-label");
-    label.addEventListener("click", (function() { this.rename(button); }).bind(this));
+    label.addEventListener("click", (function(event) { 
+      event.stopPropagation();
+      this.rename(button); 
+    }).bind(this));
+  }
+
+  setLocalIds(element, i) {
+    element.localId = ".timer-"+i;
+    element.className += " timer-"+i;
+    // var children = [].slice.call(element.children);
+    // children.forEach(function (child) { this.updateIds(child, i); }, this);
   }
 
   switchTo(button) {
     this.eventLog.add(TimerActivateEvent.makeNow(
-      0, this.eventLog.swarm.myId, button.querySelector(".timer").id)
+      0, this.eventLog.swarm.myId, button.localId)
     );
   }
 
@@ -229,18 +235,23 @@ class GameClockDisplay {
     textbox.setAttribute("value", label.innerHTML);
 
     textbox.addEventListener("keyup", (function(keyupEvent) {
+      keyupEvent.stopPropagation();
       // Number 13 is the "Enter" key on the keyboard
       if (keyupEvent.keyCode === 13) {
         // Cancel the default action, if needed
         keyupEvent.preventDefault();
         
         this.eventLog.add(TimerRenameEvent.makeNow(
-          0, this.eventLog.swarm.myId, label.id, textbox.value)
+          0, this.eventLog.swarm.myId, button.localId, textbox.value)
         );
 
         div.parentNode.removeChild(div);
       }
     }).bind(this));
+
+    textbox.addEventListener("click", function(event) { 
+      event.stopPropagation();
+    });
 
     var leftPos = (84 - labelWidth)/2;
     div.style.top = 14 - 84;

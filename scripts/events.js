@@ -9,21 +9,14 @@ class GameEventListener {
   constructor() {}
 
   clear() {}
-
-  onPeerJoins(asPlayerName) {}
+  
+  // Derived classes must provide the on...() functions that will be called
+  // by events stored in an EventLog.
 }
 
 function strcmp(a, b)
 {   
     return (a<b?-1:(a>b?1:0));  
-}
-
-class GameEventDef {
-  constructor() {}
-
-  static type() {};
-
-  static makeFromData(objectFromData) {};
 }
 
 class GameEvent {
@@ -47,6 +40,8 @@ class GameEvent {
     }
     return timestampDiff;
   }
+
+  notify(gameEventListener) {}
 }
 
 class EventLogListener {
@@ -100,10 +95,13 @@ class EventLog {
     if (events.length == 0) {
       return;
     }
+    
     this.listeners.forEach(function (listener) {
       listener.onAddingEvents();
     });
-    events.forEach(this.add);
+
+    events.forEach(this.add.bind(this));
+
     this.listeners.forEach(function (listener) {
       listener.onEventsAdded();
     });
@@ -118,13 +116,13 @@ class EventLog {
     while (thisI < this.events.length && otherI < otherEvents.length) {
       switch (Math.sign(GameEvent.compare(this.events[thisI], otherEvents[otherI]))) {
         case -1: {
-          onlyInThis = this.events[thisI];
+          onlyInThis.push(this.events[thisI]);
           ++thisI;
           break;
         }
         case 0: {++thisI; ++otherI; break;} // Duplicate.
         case 1: {
-          onlyInOther = otherEvents[otherI];
+          onlyInOther.push(otherEvents[otherI]);
           ++otherI;
           break;
         }
@@ -132,11 +130,11 @@ class EventLog {
       }
     }
     while (thisI < this.events.length) {
-      onlyInThis = this.events[thisI];
+      onlyInThis.push(this.events[thisI]);
       ++thisI;
     }
     while (otherI < otherEvents.length) {
-      onlyInOther = otherEvents[otherI];
+      onlyInOther.push(otherEvents[otherI]);
       ++otherI;
     }
     return [onlyInThis, onlyInOther];
@@ -165,29 +163,43 @@ function flattenEachIn(array) {
   return flatArray;
 }
 
-class SyncedEventLog extends EventLog {
+class SyncedEventLog {
   constructor(swarm) {
-    super();
     this.swarm = swarm;
     swarm.addListener(this);
     this.eventTypeMap = new Map();
+    this.log = new EventLog();
   }
 
+  //  Requires:
+  //    eventDef.type();
+  //    eventDef.makeFromData(data);
+  //      where data == flattenObject(event)
+  //      returns a GameEvent
   registerEventType(eventDef) {
     this.eventTypeMap.set(eventDef.type(), eventDef);
   }
 
-  makeEventFromData(data) {
-    this.eventTypeMap.get(data.type).makeFromData(data);
+  addListener(listener) {
+    this.log.addListener(listener);
   }
 
   add(event) {
-    super.add(event);
+    this.log.add(event);
     this.broadcastEvents([event]);
   }
+  
+  exportTo(gameEventListener) {
+    this.log.exportTo(gameEventListener);
+  }
+
 
   dataType() {
     return "events";
+  }
+
+  makeEventFromData(data) {
+    return this.eventTypeMap.get(data.type).makeFromData(data);
   }
 
   onConnect(peer, id) {
@@ -212,10 +224,10 @@ class SyncedEventLog extends EventLog {
   }
 
   merge(otherEvents, broadcastMissing) {
-    var [onlyInThis, onlyInOther] = this.compare(otherEvents);
+    var [onlyInThis, onlyInOther] = this.log.compare(otherEvents);
 
     // Add those that are onlyInOther without broadcasting.
-    super.addMultiple(onlyInOther);
+    this.log.addMultiple(onlyInOther);
 
     // Broadcast onlyInThis 
     // TODO only if it contains an event this peer generated.
@@ -242,7 +254,7 @@ class SyncedEventLog extends EventLog {
   dataForAllEvents() {
     var data = {type: this.dataType()};
     data.isAllEvents = true;
-    data.events = flattenEachIn(this.events);
+    data.events = flattenEachIn(this.log.events);
     return data;
   }
 
