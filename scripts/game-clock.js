@@ -1,6 +1,40 @@
 
 'use strict'
 
+const buttonHtml = `      
+<div class="button" style="position: relative; top: 0; width:84; height:84; padding:8; ">
+  <svg xmlns="http://www.w3.org/2000/svg" style="position: relative; width:100%; height:100%;">
+    <g>
+      <rect
+          class="button-rect"
+          rx="5"
+          ry="5"
+          y="2.5000043"
+          x="2.5"
+          height="80"
+          width="80"
+          style="opacity:1;vector-effect:none;fill:#75758a;fill-opacity:0.5;stroke:#5c5c5c;stroke-width:5;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1" />
+      <text
+          y="29.096361"
+          x="41.852322"
+          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:11.28888893px;line-height:1.25;font-family:'Segoe UI';-inkscape-font-specification:'Segoe UI';text-align:center;letter-spacing:0px;word-spacing:0px;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+          xml:space="preserve"><tspan
+            class="button-label"
+            style="font-size:11.28888893px;text-align:center;text-anchor:middle;stroke-width:0.26458332"
+            y="29.096361"
+            x="41.852322">Down time</tspan></text>
+      <text
+          y="54.624832"
+          x="42.496555"
+          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:16.93333244px;line-height:1.25;font-family:'Segoe UI';-inkscape-font-specification:'Segoe UI';text-align:center;letter-spacing:0px;word-spacing:0px;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+          xml:space="preserve"><tspan
+            style="font-size:16.93333244px;text-align:center;text-anchor:middle;stroke-width:0.26458332"
+            y="54.624832"
+            x="42.496555"
+            class="time-display">00:00:00</tspan></text>
+    </g>
+  </svg>
+</div>`;
 
 function generateHslaColors (saturation, lightness, alpha, amount) {
   let colors = []
@@ -117,7 +151,7 @@ class GameClockBoard extends BasicGameEventListener {
       timer.time = 0;
     });
     this.domElement.querySelectorAll(".time-display").forEach((timer) => {
-      timer.innerHTML = "00:00:00";
+      timer.innerHTML = formatTime(0);
     });
     this.domElement.querySelectorAll(".button-label").forEach((label) => {
       label.innerHTML = "Timer";
@@ -165,6 +199,7 @@ class GameClockDisplay {
   constructor(eventLog, domElement) {
     this.eventLog = eventLog;
     this.domElement = domElement;
+    this.domElement.innerHTML = buttonHtml;
     this.templateButton = this.getElement(".button");
 
     this.eventLog.registerEventType(TimerRenameEvent);
