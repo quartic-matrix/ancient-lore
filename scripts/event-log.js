@@ -6,7 +6,7 @@ function strcmp(a, b)
     return (a<b?-1:(a>b?1:0));  
 }
 
-class GameEvent {
+class LogEvent {
   static makeTimestamp(timestampOffset) {
     var timestamp = +(new Date());
     return timestampOffset + timestamp;
@@ -28,7 +28,7 @@ class GameEvent {
     return timestampDiff;
   }
 
-  notify(gameEventListener) {}
+  notify(logEventConsumer) {}
 }
 
 class EventLogListener {
@@ -41,6 +41,29 @@ class EventLogListener {
 
   // Called after multiple events are added in a batch.
   onEventsAdded() {}
+}
+
+class LogEventConsumerUpdater extends EventLogListener {
+  constructor(eventConsumer, eventLog) {
+    super();
+    this.eventConsumer = eventConsumer;
+    this.eventLog = eventLog;
+    this.eventLog.addListener(this);
+    this.fullUpdate();
+  }
+
+  fullUpdate() {
+    this.eventConsumer.reset();
+    this.eventLog.exportTo(this.eventConsumer);
+  }
+
+  onEventAdded(event, isLast) {
+    if (isLast) {
+      event.notify(this.eventConsumer);
+    } else {
+      this.fullUpdate();
+    }
+  }
 }
 
 class EventLog {
@@ -83,7 +106,7 @@ class EventLog {
   }
 
   /**
-   * @param {*} otherEvents an array of GameEvents.
+   * @param {*} otherEvents an array of LogEvents.
    * @returns [onlyInThis, onlyInOther] where:
    *    onlyInThis is an array of all the events that are only in this.
    *    onlyInOther is an array of all the events that are only in otherEvents.
@@ -95,7 +118,7 @@ class EventLog {
     var thisI = 0;
     var otherI = 0;
     while (thisI < this.events.length && otherI < otherEvents.length) {
-      switch (Math.sign(GameEvent.compare(this.events[thisI], otherEvents[otherI]))) {
+      switch (Math.sign(LogEvent.compare(this.events[thisI], otherEvents[otherI]))) {
         case -1: {
           onlyInThis.push(this.events[thisI]);
           ++thisI;
@@ -122,12 +145,12 @@ class EventLog {
   }
 
   /**
-   * @param {*} gameEventListener requires:
+   * @param {*} logEventConsumer requires:
    *    Everything used by event.notify() for all events added to this.
    */
-  exportTo(gameEventListener) {
+  exportTo(logEventConsumer) {
     this.events.forEach((event) => {
-      event.notify(gameEventListener);
+      event.notify(logEventConsumer);
     });
   }
 
@@ -135,7 +158,7 @@ class EventLog {
 
   findIndexFor(event) {
     for (var i = this.events.length; i > 0; --i) {
-      switch (Math.sign(GameEvent.compare(event, this.events[i - 1]))) {
+      switch (Math.sign(LogEvent.compare(event, this.events[i - 1]))) {
         case -1: {break;} // Before event i-1, keep looking.
         case 0: {return false;} // Duplicate.
         case 1: {return i;}
@@ -163,11 +186,13 @@ function flattenEachIn(array) {
 }
 
 class SyncedEventLog {
-  constructor(swarm) {
+  constructor(swarm, channel) {
     this.swarm = swarm;
-    swarm.addListener(this);
+    this.channel = channel;
     this.eventTypeMap = new Map();
     this.log = new EventLog();
+
+    swarm.addListener(this);
   }
 
   /**
@@ -175,7 +200,7 @@ class SyncedEventLog {
    *    type()
    *    makeFromData(data):
    *      data == flattenObject(event with type matching eventDef)
-   *      Returns a GameEvent.
+   *      Returns a LogEvent.
    */
   registerEventType(eventDef) {
     this.eventTypeMap.set(eventDef.type(), eventDef);
@@ -192,8 +217,8 @@ class SyncedEventLog {
   /**
    * 
    * @param {*} event requires:
-   *    To extend or be usable in place of GameEvent.
-   *    For notify(gameEventListener), see EventLog.exportTo().
+   *    To extend or be usable in place of LogEvent.
+   *    For notify(logEventConsumer), see EventLog.exportTo().
    */
   add(event) {
     this.log.add(event);
@@ -201,10 +226,10 @@ class SyncedEventLog {
   }
   
   /**
-   * @param {*} gameEventListener see EventLog.exportTo().
+   * @param {*} logEventConsumer see EventLog.exportTo().
    */
-  exportTo(gameEventListener) {
-    this.log.exportTo(gameEventListener);
+  exportTo(logEventConsumer) {
+    this.log.exportTo(logEventConsumer);
   }
 
   //-----
@@ -220,24 +245,20 @@ class SyncedEventLog {
   onDisconnect(peer, id) {}
 
   onReceive(data) {
-    if (data.type != this.dataType()) {
+    if (data.type != this.channel) {
       return; // `data` is not for this.
     }
 
     var otherEvents = [];
     data.events.forEach((eventData) => {
-      var gameEvent = this.makeEventFromData(eventData);
-      if (gameEvent) {
-        otherEvents.push(gameEvent);
+      var logEvent = this.makeEventFromData(eventData);
+      if (logEvent) {
+        otherEvents.push(logEvent);
       }
     });
     this.merge(otherEvents, data.isAllEvents);
   }
   /// @}
-  
-  dataType() {
-    return "events";
-  }
 
   makeEventFromData(data) {
     return this.eventTypeMap.get(data.type).makeFromData(data);
@@ -257,7 +278,7 @@ class SyncedEventLog {
   }
 
   broadcastEvents(events) {
-    var data = {type: this.dataType()};
+    var data = {type: this.channel};
     data.isAllEvents = false;
     data.events = flattenEachIn(events);
     this.swarm.broadcast(data);
@@ -272,7 +293,7 @@ class SyncedEventLog {
   }
 
   dataForAllEvents() {
-    var data = {type: this.dataType()};
+    var data = {type: this.channel};
     data.isAllEvents = true;
     data.events = flattenEachIn(this.log.events);
     return data;

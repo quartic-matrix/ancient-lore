@@ -1,7 +1,7 @@
 
 'use strict'
 
-class PeerJoinEvent extends GameEvent {
+class PeerJoinEvent extends LogEvent {
 
   static type() {
     return "peer-joins";
@@ -17,7 +17,7 @@ class PeerJoinEvent extends GameEvent {
 
   static makeNow(timestampOffset, peerId, playerName) {
     return new PeerJoinEvent(
-      GameEvent.makeTimestamp(timestampOffset),
+      LogEvent.makeTimestamp(timestampOffset),
       peerId,
       playerName
     );
@@ -33,43 +33,24 @@ class PeerJoinEvent extends GameEvent {
   }
 }
 
-class BasicGameEventListener {
+class BasicLogEventListener {
   constructor() {}
 
-  clear() {}
+  reset() {}
 
   onPeerJoins(playerName) {}
 }
 
 class BasicGame {
-  constructor(eventLog, playerName) {
+  constructor(eventLog) {
     this.eventLog = eventLog;
     this.eventLog.registerEventType(PeerJoinEvent);
+  }
+
+  join(playerName) {
     this.eventLog.add(PeerJoinEvent.makeNow(
       0, this.eventLog.swarm.myId, playerName
     ));
   }
 }
 
-class GameEventListenerUpdater extends EventLogListener {
-  constructor(eventListener, eventLog) {
-    super();
-    this.eventListener = eventListener;
-    this.eventLog = eventLog;
-    this.eventLog.addListener(this);
-    this.fullUpdate();
-  }
-
-  fullUpdate() {
-    this.eventListener.clear();
-    this.eventLog.exportTo(this.eventListener);
-  }
-
-  onEventAdded(event, isLast) {
-    if (isLast) {
-      event.notify(this.eventListener);
-    } else {
-      this.fullUpdate();
-    }
-  }
-}

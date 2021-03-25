@@ -11,36 +11,46 @@
     <script>
       var clocks = [];
       // var fakeServer = new FakeServer();
+      var serverUrls = ['https://quartic-matrix-signalhub.herokuapp.com/'];
 
       document.addEventListener("onload",init(),false);
 
       function init() {
-        var domElement0 = document.getElementById("buttons-0");
-        var domElement1 = domElement0.cloneNode(true);
-        domElement1.id = "buttons-1";
-        domElement0.parentElement.appendChild(domElement1);
+        var domElements = [document.getElementById("buttons-0")];
+        for (let index = 1; index < 6; index++) {
+          domElements.push(cloneDomElement(domElements[0], "buttons-" + index));
+        }
 
-        clocks.push(createGameClock(domElement0));
-        clocks.push(createGameClock(domElement1));
+        var swarmId = "swarm-example";
+        var channel = "clock-events";
+        clocks.push(createGameClock(swarmId, channel, domElements[0]));
+        clocks.push(createGameClock(swarmId, channel, domElements[1]));
+
+        channel = "clock-events-2";
+        clocks.push(createGameClock(swarmId, channel, domElements[2]));
+        clocks.push(createGameClock(swarmId, channel, domElements[3]));
+
+        swarmId = "swarm-example-2";
+        clocks.push(createGameClock(swarmId, channel, domElements[4]));
+        clocks.push(createGameClock(swarmId, channel, domElements[5]));
       }
 
-      function createGameClock(domElement) {
-        if (typeof fakeServer !== "undefined") {
-          var swarm = new FakeSwarm();
-          fakeServer.connect(swarm);
-        } else {
-          var swarm = new WebSwarm();
-        }
-        var eventLog = new SyncedEventLog(swarm); 
+      function cloneDomElement(olderSibling, id) {
+        var youngerSibling = olderSibling.cloneNode(true);
+        youngerSibling.id = id;
+        olderSibling.parentElement.appendChild(youngerSibling);
+        return youngerSibling;
+      }
 
-        var clock = {};
-        clock.gameClockDisplay = new GameClockDisplay(eventLog, domElement);
-        clock.gameClockBoard = new GameClockBoard(domElement);
-        clock.gameClockBoardUpdater = new GameClockBoardUpdater(
-          clock.gameClockBoard, eventLog
-        );
-        clock.gameClock = new GameClock(eventLog);
-        return clock;
+      function createGameClock(swarmId, channel, domElement) {
+        if (typeof fakeServer !== "undefined") {
+          var swarm = new FakeSwarm(swarmId, fakeServer);
+        } else {
+          var swarm = new WebSwarm(swarmId, serverUrls);
+        }
+        var eventLog = new SyncedEventLog(swarm, channel); 
+
+        return new GameClock(eventLog, domElement);;
       }
 
     </script> 

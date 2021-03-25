@@ -61,7 +61,7 @@ function makeTwoDigits(number) {
   return ("0" + number).slice(-2);
 }
 
-class TimerRenameEvent extends GameEvent {
+class TimerRenameEvent extends LogEvent {
 
   static type() {
     return "timer-rename";
@@ -75,7 +75,7 @@ class TimerRenameEvent extends GameEvent {
 
   static makeNow(timestampOffset, peerId, timerId, newName) {
     return new TimerRenameEvent(
-      GameEvent.makeTimestamp(timestampOffset), peerId, timerId, newName
+      LogEvent.makeTimestamp(timestampOffset), peerId, timerId, newName
     );
   }
 
@@ -90,7 +90,7 @@ class TimerRenameEvent extends GameEvent {
   }
 }
 
-class TimerActivateEvent extends GameEvent {
+class TimerActivateEvent extends LogEvent {
 
   static type() {
     return "timer-activate";
@@ -104,7 +104,7 @@ class TimerActivateEvent extends GameEvent {
 
   static makeNow(timestampOffset, peerId, timerId) {
     return new TimerActivateEvent(
-      GameEvent.makeTimestamp(timestampOffset), peerId, timerId
+      LogEvent.makeTimestamp(timestampOffset), peerId, timerId
     );
   }
 
@@ -119,18 +119,24 @@ class TimerActivateEvent extends GameEvent {
 }
 
 class GameClock extends BasicGame {
-  constructor(eventLog) {
-    super(eventLog, "<player-name>");
+  constructor(eventLog, domElement) {
+    super(eventLog);
+    this.gameClockDisplay = new GameClockDisplay(eventLog, domElement);
+    this.gameClockBoard = new GameClockBoard(domElement);
+    this.gameClockBoardUpdater = new GameClockBoardUpdater(
+      this.gameClockBoard, eventLog
+    );
+    this.join("<player-name>");
   }
 }
 
-class GameClockBoardUpdater extends GameEventListenerUpdater {
+class GameClockBoardUpdater extends LogEventConsumerUpdater {
   constructor(gameClockBoard, eventLog) {
     super(gameClockBoard, eventLog);
   }
 }
 
-class GameClockBoard extends BasicGameEventListener {
+class GameClockBoard extends BasicLogEventListener {
   constructor(domElement) {
     super();
     this.domElement = domElement;
@@ -141,7 +147,7 @@ class GameClockBoard extends BasicGameEventListener {
     setInterval(this.updateActiveTimer.bind(this), 101);
   }
 
-  clear() {
+  reset() {
     if (this.activeTimer) {
       this.activeTimer.parentElement.parentElement.querySelector(".button-rect").style.stroke = "#5c5c5c";
     }

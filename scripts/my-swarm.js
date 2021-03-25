@@ -42,9 +42,9 @@ class MySwarm {
 }
 
 class WebSwarm extends MySwarm {
-  constructor() {
+  constructor(swarmId, serverUrls) {
     super();
-    this.rtcSwarm = this.makeWebRTCSwarm()
+    this.rtcSwarm = this.makeWebRTCSwarm(swarmId, serverUrls)
 
     super.myId = this.rtcSwarm.me;
   }
@@ -61,8 +61,8 @@ class WebSwarm extends MySwarm {
     peer.send(json);
   }
 
-  makeWebRTCSwarm() {
-    var swarm = new WebRTCSwarm('swarm-example', ['https://quartic-matrix-signalhub.herokuapp.com/'])
+  makeWebRTCSwarm(swarmId, serverUrls) {
+    var swarm = new WebRTCSwarm(swarmId, serverUrls);
 
     if (!swarm.WEBRTC_SUPPORT) {
 
@@ -103,12 +103,14 @@ function removeFromArray(array, value) {
 }
 
 class FakeSwarm extends MySwarm {
-  constructor() {
+  constructor(swarmId, fakeServer) {
     super();
     // All the other FakeSwarms, just needs send(json).
     this.peers = [];
+    this.swarmId = swarmId;
 
     super.myId = FakeServer.generateId();
+    fakeServer.connect(this, this.swarmId);
   }
 
   broadcast(data) {
@@ -142,20 +144,30 @@ class FakeServer {
   }
 
   constructor() {
-    this.fakeSwarms = [];
+    this.fakeSwarmsMap = new Map();
   }
 
-  connect(initiator) {
-    this.fakeSwarms.forEach((other) => {
+  connect(initiator, swarmId) {
+    if (!this.fakeSwarmsMap.has(swarmId)) {
+      this.fakeSwarmsMap.set(swarmId, new Array());
+    }
+    var fakeSwarms = this.fakeSwarmsMap.get(swarmId);
+
+    fakeSwarms.forEach((other) => {
       other.connect(initiator, initiator.myId);
       initiator.connect(other, other.myId);
     });
-    this.fakeSwarms.push(initiator);
+    fakeSwarms.push(initiator);
   }
 
-  disconnect(initiator) {
-    removeFromArray(this.fakeSwarms, initiator);
-    this.fakeSwarms.forEach((other) => {
+  disconnect(initiator, swarmId) {
+    if (!this.fakeSwarmsMap.has(swarmId)) {
+      return; // No need to disconnect from undefined swarm.
+    }
+    var fakeSwarms = this.fakeSwarmsMap.get(swarmId);
+
+    removeFromArray(fakeSwarms, initiator);
+    fakeSwarms.forEach((other) => {
       initiator.disconnect(other, other.myId);
       other.disconnect(initiator, initiator.myId);
     });
