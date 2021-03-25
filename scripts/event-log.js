@@ -36,8 +36,11 @@ class LogEvent {
  * for all the event types they register as consumable.
  */
 class LogEventConsumer {
-  constructor(consumableEventTypes) {
-    this.consumableEventTypes = new Set(consumableEventTypes);
+  constructor(consumableEvents) {
+    this.consumableEventTypes = new Set();
+    consumableEvents.forEach(event => {
+      this.consumableEventTypes.add(event.type());
+    });
   }
 
   addConsumableTypes(consumableEventTypes) {

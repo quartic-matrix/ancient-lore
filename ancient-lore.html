@@ -1,64 +1,66 @@
 <html>
   <body>
 
-    <div id="players">
-      <h1>Players</h1>
-      <div id="player-list">
-      </div>
+    <div id="game-0" style="display: inline-block; margin: 10px;">
     </div>
 
 
     <script src="deploy/webrtc-swarm.js"></script> 
-    <script src="scripts/events.js"></script> 
+    <script src="scripts/my-swarm.js"></script> 
+    <script src="scripts/event-log.js"></script> 
     <script src="scripts/game-system.js"></script> 
     <script src="scripts/ancient-lore.js"></script> 
-    <script src="scripts/my-swarm.js"></script> 
     <script>
-      var game;
-      var gameDisplay;
+      var games = [];
+      var fakeServer = new FakeServer();
+      var serverUrls = ['https://quartic-matrix-signalhub.herokuapp.com/'];
 
       document.addEventListener("onload",init(),false);
 
       function init() {
+        var domElements = [document.getElementById("game-0")];
+        for (let index = 1; index < 2; index++) {
+          domElements.push(cloneDomElement(domElements[0], "game-" + index));
+        }
+
+        const swarmIds = ["ancient-lore"];
+        const channels = ["events"];
+
+        games.push(makeAncientLoreGame(
+          swarmIds[0], channels[0], domElements[0], getPlayerName() + "-0"
+        ));
+        games.push(makeAncientLoreGame(
+          swarmIds[0], channels[0], domElements[1], getPlayerName() + "-1"
+        ));
+      }
+
+      function cloneDomElement(olderSibling, id) {
+        var youngerSibling = olderSibling.cloneNode(true);
+        youngerSibling.id = id;
+        olderSibling.parentElement.appendChild(youngerSibling);
+        return youngerSibling;
+      }
+
+      function getPlayerName() {
         var url = new URL(window.location.href);
         var playerName = url.searchParams.get("player");
         if (!playerName) {
           playerName = "<player-name>";
         }
-
-        let colours = generateHslaColors(70, 50, 1.0, 6);
-
-        game = new AncientLoreGame(makeSwarm(game), playerName);
-
-        gameDisplay = new AncientLoreDisplayUpdater(
-          new AncientLoreDisplay("player-list"), game.eventLog
-        );
+        return playerName;
       }
 
-      function generateHslaColors (saturation, lightness, alpha, amount) {
-        let colors = []
-        let huedelta = Math.trunc(360 / amount)
-
-        for (let i = 0; i < amount; i++) {
-          let hue = i * huedelta
-          colors.push(`hsla(${hue},${saturation}%,${lightness}%,${alpha})`)
+      function makeAncientLoreGame(swarmId, channel, domElement, playerName) {
+        if (typeof fakeServer !== "undefined") {
+          var swarm = new FakeSwarm(swarmId, fakeServer);
+        } else {
+          var swarm = new WebSwarm(swarmId, serverUrls);
         }
+        var eventLog = new SyncedEventLog(swarm, channel); 
 
-        return colors
+        return new AncientLoreGame(eventLog, domElement, playerName);
       }
 
-      function formatTime(timeInMs) {
-        var milliseconds = parseInt((timeInMs % 1000) / 100);
-        var seconds = Math.floor((timeInMs / 1000) % 60);
-        var minutes = Math.floor((timeInMs / (1000 * 60)) % 60);
-        var hours = Math.floor((timeInMs / (1000 * 60 * 60)) % 24);
-
-        return hours + ":" + makeTwoDigits(minutes) + ":" + makeTwoDigits(seconds) + "." + milliseconds;
-      }
-
-      function makeTwoDigits(number) {
-        return ("0" + number).slice(-2);
-      }
     </script> 
   </body>
 </html>

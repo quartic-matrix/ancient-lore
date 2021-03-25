@@ -2,8 +2,8 @@
 'use strict'
 
 const buttonHtml = `      
-<div class="button" style="position: relative; top: 0; width:84; height:84; padding:8; ">
-  <svg xmlns="http://www.w3.org/2000/svg" style="position: relative; width:100%; height:100%;">
+<div class="button" style="display: inline-block; width:84px; height:84px; margin:2px;">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 84 84">
     <g>
       <rect
           class="button-rect"
@@ -34,7 +34,8 @@ const buttonHtml = `
             class="time-display">00:00:00</tspan></text>
     </g>
   </svg>
-</div>`;
+  </div>
+  `;
 
 function generateHslaColors (saturation, lightness, alpha, amount) {
   let colors = []
@@ -125,6 +126,8 @@ class GameClock {
     this.gameClockBoardUpdater = new GameClockBoardUpdater(
       this.gameClockBoard, eventLog
     );
+    // Tell everyone that we have no events so they send us theirs.
+    eventLog.broadcastAllEvents();
   }
 }
 
@@ -136,7 +139,7 @@ class GameClockBoardUpdater extends LogEventConsumerUpdater {
 
 class GameClockBoard extends LogEventConsumer {
   constructor(domElement) {
-    super([TimerActivateEvent.type(), TimerRenameEvent.type()]);
+    super([TimerActivateEvent, TimerRenameEvent]);
     this.domElement = domElement;
     this.activeTimer;
     this.lastTimestamp = 0;
@@ -203,7 +206,7 @@ class GameClockDisplay {
   constructor(eventLog, domElement) {
     this.eventLog = eventLog;
     this.domElement = domElement;
-    this.domElement.innerHTML = buttonHtml;
+    this.domElement.innerHTML = buttonHtml.trim();
     this.templateButton = this.getElement(".button");
 
     this.eventLog.registerEventType(TimerRenameEvent);
