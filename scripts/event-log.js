@@ -291,7 +291,10 @@ class SyncedEventLog {
   /// @}
 
   makeEventFromData(data) {
-    return this.eventTypeMap.get(data.type).makeFromData(data);
+    var eventType = this.eventTypeMap.get(data.type);
+    if (eventType) {
+      return eventType.makeFromData(data);
+    }
   }
 
   merge(otherEvents, broadcastMissing) {
