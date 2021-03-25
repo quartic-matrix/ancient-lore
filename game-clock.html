@@ -22,17 +22,16 @@
         }
 
         var swarmId = "swarm-example";
-        var channel = "clock-events";
-        clocks.push(createGameClock(swarmId, channel, domElements[0]));
-        clocks.push(createGameClock(swarmId, channel, domElements[1]));
+        var channels = ["clock-events", "clock-events-2"];
+        clocks.push(createGameClock(swarmId, channels[0], domElements[0]));
+        clocks.push(createGameClock(swarmId, channels[0], domElements[1]));
 
-        channel = "clock-events-2";
-        clocks.push(createGameClock(swarmId, channel, domElements[2]));
-        clocks.push(createGameClock(swarmId, channel, domElements[3]));
+        // clocks.push(createGameClock(swarmId, channels[1], domElements[2]));
+        // clocks.push(createGameClock(swarmId, channels[1], domElements[3]));
 
-        swarmId = "swarm-example-2";
-        clocks.push(createGameClock(swarmId, channel, domElements[4]));
-        clocks.push(createGameClock(swarmId, channel, domElements[5]));
+        // swarmId = "swarm-example-2";
+        // clocks.push(createGameClock(swarmId, channel, domElements[4]));
+        // clocks.push(createGameClock(swarmId, channel, domElements[5]));
       }
 
       function cloneDomElement(olderSibling, id) {

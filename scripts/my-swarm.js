@@ -44,7 +44,7 @@ class MySwarm {
 class WebSwarm extends MySwarm {
   constructor(swarmId, serverUrls) {
     super();
-    this.rtcSwarm = this.makeWebRTCSwarm(swarmId, serverUrls)
+    this.rtcSwarm = this.makeWebRTCSwarm(swarmId, serverUrls);
 
     super.myId = this.rtcSwarm.me;
   }
