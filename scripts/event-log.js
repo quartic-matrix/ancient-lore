@@ -31,6 +31,28 @@ class LogEvent {
   notify(logEventConsumer) {}
 }
 
+/**
+ * Derived classes need to provide everything required by LogEvent.notify(this)
+ * for all the event types they register as consumable.
+ */
+class LogEventConsumer {
+  constructor(consumableEventTypes) {
+    this.consumableEventTypes = new Set(consumableEventTypes);
+  }
+
+  addConsumableTypes(consumableEventTypes) {
+    consumableEventTypes.forEach(eventType => {
+      this.consumableEventTypes.add(eventType);
+    });
+  }
+
+  consume(logEvent) {
+    if (this.consumableEventTypes.has(logEvent.type)) {
+      logEvent.notify(this);
+    }
+  }
+}
+
 class EventLogListener {
   constructor() {}
 
@@ -44,6 +66,11 @@ class EventLogListener {
 }
 
 class LogEventConsumerUpdater extends EventLogListener {
+  /**
+   * @param {*} eventConsumer requires:
+   *    reset()
+   *    consume(LogEvent)
+   */
   constructor(eventConsumer, eventLog) {
     super();
     this.eventConsumer = eventConsumer;
@@ -52,17 +79,21 @@ class LogEventConsumerUpdater extends EventLogListener {
     this.fullUpdate();
   }
 
-  fullUpdate() {
-    this.eventConsumer.reset();
-    this.eventLog.exportTo(this.eventConsumer);
-  }
-
   onEventAdded(event, isLast) {
     if (isLast) {
-      event.notify(this.eventConsumer);
+      this.eventConsumer.consume(event);
     } else {
       this.fullUpdate();
     }
+  }
+
+  fullUpdate() {
+    this.eventConsumer.reset();
+    this.eventLog.exportTo(this);
+  }
+
+  onEventExported(event) {
+    this.eventConsumer.consume(event);
   }
 }
 
@@ -145,12 +176,12 @@ class EventLog {
   }
 
   /**
-   * @param {*} logEventConsumer requires:
-   *    Everything used by event.notify() for all events added to this.
+   * @param {*} requester requires:
+   *    onEventExported(LogEvent)
    */
-  exportTo(logEventConsumer) {
+   exportTo(requester) {
     this.events.forEach((event) => {
-      event.notify(logEventConsumer);
+      requester.onEventExported(event);
     });
   }
 
@@ -218,7 +249,6 @@ class SyncedEventLog {
    * 
    * @param {*} event requires:
    *    To extend or be usable in place of LogEvent.
-   *    For notify(logEventConsumer), see EventLog.exportTo().
    */
   add(event) {
     this.log.add(event);
@@ -226,10 +256,10 @@ class SyncedEventLog {
   }
   
   /**
-   * @param {*} logEventConsumer see EventLog.exportTo().
+   * @param {*} requester see EventLog.exportTo().
    */
-  exportTo(logEventConsumer) {
-    this.log.exportTo(logEventConsumer);
+  exportTo(requester) {
+    this.log.exportTo(requester);
   }
 
   //-----

@@ -136,9 +136,9 @@ class GameClockBoardUpdater extends LogEventConsumerUpdater {
   }
 }
 
-class GameClockBoard extends BasicLogEventListener {
+class GameClockBoard extends LogEventConsumer {
   constructor(domElement) {
-    super();
+    super([TimerActivateEvent.type(), TimerRenameEvent.type()]);
     this.domElement = domElement;
     this.activeTimer;
     this.lastTimestamp = 0;

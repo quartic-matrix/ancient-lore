@@ -33,14 +33,6 @@ class PeerJoinEvent extends LogEvent {
   }
 }
 
-class BasicLogEventListener {
-  constructor() {}
-
-  reset() {}
-
-  onPeerJoins(playerName) {}
-}
-
 class BasicGame {
   constructor(eventLog) {
     this.eventLog = eventLog;
