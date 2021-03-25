@@ -21,17 +21,16 @@
           domElements.push(cloneDomElement(domElements[0], "buttons-" + index));
         }
 
-        var swarmId = "swarm-example";
-        var channels = ["clock-events", "clock-events-2"];
-        clocks.push(createGameClock(swarmId, channels[0], domElements[0]));
-        clocks.push(createGameClock(swarmId, channels[0], domElements[1]));
+        const swarmIds = ["swarm-example", "swarm-example-2"];
+        const channels = ["clock-events", "clock-events-2"];
+        clocks.push(createGameClock(swarmIds[0], channels[0], domElements[0]));
+        // clocks.push(createGameClock(swarmIds[0], channels[0], domElements[1]));
 
-        // clocks.push(createGameClock(swarmId, channels[1], domElements[2]));
-        // clocks.push(createGameClock(swarmId, channels[1], domElements[3]));
+        // clocks.push(createGameClock(swarmIds[0], channels[1], domElements[2]));
+        // clocks.push(createGameClock(swarmIds[0], channels[1], domElements[3]));
 
-        // swarmId = "swarm-example-2";
-        // clocks.push(createGameClock(swarmId, channel, domElements[4]));
-        // clocks.push(createGameClock(swarmId, channel, domElements[5]));
+        clocks.push(createGameClock(swarmIds[1], channels[0], domElements[4]));
+        // clocks.push(createGameClock(swarmIds[1], channels[0], domElements[5]));
       }
 
       function cloneDomElement(olderSibling, id) {
