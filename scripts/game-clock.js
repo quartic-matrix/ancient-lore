@@ -118,15 +118,13 @@ class TimerActivateEvent extends LogEvent {
   }
 }
 
-class GameClock extends BasicGame {
+class GameClock {
   constructor(eventLog, domElement) {
-    super(eventLog);
     this.gameClockDisplay = new GameClockDisplay(eventLog, domElement);
     this.gameClockBoard = new GameClockBoard(domElement);
     this.gameClockBoardUpdater = new GameClockBoardUpdater(
       this.gameClockBoard, eventLog
     );
-    this.join("<player-name>");
   }
 }
 
