@@ -2,7 +2,7 @@
 'use strict'
 
 const buttonHtml = `      
-<div class="button" style="display: inline-block; width:84px; height:84px; margin:2px;">
+<div class="button" style="width:12.8vmax; height:12.8vmax; min-width:15mm; min-height:15mm; margin:2px;">
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 84 84">
     <g>
       <rect
