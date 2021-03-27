@@ -1,6 +1,12 @@
 
 'use strict'
 
+function querySelectorFrom(elements, selector) {
+  return [].filter.call(elements, function(element) {
+      return element.matches(selector);
+  });
+}
+
 class PeerJoinEvent extends LogEvent {
 
   static type() {

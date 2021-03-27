@@ -1,7 +1,16 @@
 <html>
+  <head>
+    <link href='https://fonts.googleapis.com/css?family=Trirong' rel='stylesheet'>
+    <link rel="stylesheet" href="styles/hive.css">
+    <link rel="stylesheet" href="styles/ancient-lore.css">
+  </head>
   <body>
 
-    <div id="game-0" style="display: inline-block; margin: 10px;">
+    <div id="game-0" class="game-area" style="display: flex;">
+      <div class="players" >
+      </div>  
+      <div class="board" style="width: 100%;">
+      </div>
     </div>
 
 
@@ -10,6 +19,7 @@
     <script src="scripts/event-log.js"></script> 
     <script src="scripts/game-system.js"></script> 
     <script src="scripts/ancient-lore.js"></script> 
+    <script src="scripts/ancient-lore-board-html.js"></script> 
     <script>
       var games = [];
       var fakeServer = new FakeServer();
