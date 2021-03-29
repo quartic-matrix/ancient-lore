@@ -8,7 +8,7 @@ function strcmp(a, b)
 
 class LogEvent {
   static makeTimestamp(timestampOffset) {
-    var timestamp = +(new Date());
+    let timestamp = +(new Date());
     return timestampOffset + timestamp;
     ;
   }
@@ -21,7 +21,7 @@ class LogEvent {
   }
 
   static compare(event0, event1) {
-    var timestampDiff = event0.timestamp - event1.timestamp;
+    let timestampDiff = event0.timestamp - event1.timestamp;
     if (timestampDiff == 0) {
       return strcmp(event0.peerId, event1.peerId);
     }
@@ -59,7 +59,7 @@ class LogEventConsumer {
 class EventLogListener {
   constructor() {}
 
-  onEventAdded(event, isLast) {}
+  onEventAdded(event, atBack) {}
 
   // Called before multiple events are added in a batch.
   onAddingEvents() {}
@@ -82,8 +82,8 @@ class LogEventConsumerUpdater extends EventLogListener {
     this.fullUpdate();
   }
 
-  onEventAdded(event, isLast) {
-    if (isLast) {
+  onEventAdded(event, atBack) {
+    if (atBack) {
       this.eventConsumer.consume(event);
     } else {
       this.fullUpdate();
@@ -111,14 +111,14 @@ class EventLog {
   }
 
   add(event) {
-    var i = this.findIndexFor(event);
+    let i = this.findIndexFor(event);
     if (i === false) {
       return false;
     }
     this.events.splice(i, 0, event);
-    var isLast = i == this.events.length-1;
+    let atBack = i == this.events.length-1;
     this.listeners.forEach((listener) => {
-      listener.onEventAdded(event, isLast);
+      listener.onEventAdded(event, atBack);
     });
     return true;
   }
@@ -146,11 +146,11 @@ class EventLog {
    *    onlyInOther is an array of all the events that are only in otherEvents.
    */
   compare(otherEvents) {
-    var onlyInThis = [];
-    var onlyInOther = [];
+    let onlyInThis = [];
+    let onlyInOther = [];
 
-    var thisI = 0;
-    var otherI = 0;
+    let thisI = 0;
+    let otherI = 0;
     while (thisI < this.events.length && otherI < otherEvents.length) {
       switch (Math.sign(LogEvent.compare(this.events[thisI], otherEvents[otherI]))) {
         case -1: {
@@ -191,7 +191,7 @@ class EventLog {
   //-----
 
   findIndexFor(event) {
-    for (var i = this.events.length; i > 0; --i) {
+    for (let i = this.events.length; i > 0; --i) {
       switch (Math.sign(LogEvent.compare(event, this.events[i - 1]))) {
         case -1: {break;} // Before event i-1, keep looking.
         case 0: {return false;} // Duplicate.
@@ -204,15 +204,15 @@ class EventLog {
 }
 
 function flattenObject(obj) {   
-  var result = {};   
-  for(var key in obj) {       
+  let result = {};   
+  for(let key in obj) {       
     result[key] = obj[key];   
   }   
   return result; 
 }
 
 function flattenEachIn(array) {
-  var flatArray = [];
+  let flatArray = [];
   array.forEach((event) => {
     flatArray.push(flattenObject(event));
   });
@@ -282,9 +282,9 @@ class SyncedEventLog {
       return; // `data` is not for this.
     }
 
-    var otherEvents = [];
+    let otherEvents = [];
     data.events.forEach((eventData) => {
-      var logEvent = this.makeEventFromData(eventData);
+      let logEvent = this.makeEventFromData(eventData);
       if (logEvent) {
         otherEvents.push(logEvent);
       }
@@ -294,14 +294,14 @@ class SyncedEventLog {
   /// @}
 
   makeEventFromData(data) {
-    var eventType = this.eventTypeMap.get(data.type);
+    let eventType = this.eventTypeMap.get(data.type);
     if (eventType) {
       return eventType.makeFromData(data);
     }
   }
 
   merge(otherEvents, broadcastMissing) {
-    var [onlyInThis, onlyInOther] = this.log.compare(otherEvents);
+    let [onlyInThis, onlyInOther] = this.log.compare(otherEvents);
 
     // Add those that are onlyInOther without broadcasting.
     this.log.addMultiple(onlyInOther);
@@ -314,7 +314,7 @@ class SyncedEventLog {
   }
 
   broadcastEvents(events) {
-    var data = {type: this.channel};
+    let data = {type: this.channel};
     data.isAllEvents = false;
     data.events = flattenEachIn(events);
     this.swarm.broadcast(data);
@@ -329,7 +329,7 @@ class SyncedEventLog {
   }
 
   dataForAllEvents() {
-    var data = {type: this.channel};
+    let data = {type: this.channel};
     data.isAllEvents = true;
     data.events = flattenEachIn(this.log.events);
     return data;

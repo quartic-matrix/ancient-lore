@@ -9,7 +9,11 @@
     <div id="game-0" class="game-area" style="display: flex;">
       <div class="players" >
       </div>  
-      <div class="board" style="width: 100%;">
+      <div class="board-area" style="width: 100%;">
+        <div class="input-overlay" style="width: 100%;">
+        </div>
+        <div class="board" style="width: 100%;">
+        </div>
       </div>
     </div>
 
@@ -28,7 +32,7 @@
       document.addEventListener("onload",init(),false);
 
       function init() {
-        var domElements = [document.getElementById("game-0")];
+        let domElements = [document.getElementById("game-0")];
         for (let index = 1; index < 2; index++) {
           domElements.push(cloneDomElement(domElements[0], "game-" + index));
         }
@@ -45,15 +49,15 @@
       }
 
       function cloneDomElement(olderSibling, id) {
-        var youngerSibling = olderSibling.cloneNode(true);
+        let youngerSibling = olderSibling.cloneNode(true);
         youngerSibling.id = id;
         olderSibling.parentElement.appendChild(youngerSibling);
         return youngerSibling;
       }
 
       function getPlayerName() {
-        var url = new URL(window.location.href);
-        var playerName = url.searchParams.get("player");
+        let url = new URL(window.location.href);
+        let playerName = url.searchParams.get("player");
         if (!playerName) {
           playerName = "<player-name>";
         }
@@ -66,7 +70,7 @@
         } else {
           var swarm = new WebSwarm(swarmId, serverUrls);
         }
-        var eventLog = new SyncedEventLog(swarm, channel); 
+        let eventLog = new SyncedEventLog(swarm, channel); 
 
         return new AncientLoreGame(eventLog, domElement, playerName);
       }

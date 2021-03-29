@@ -28,7 +28,7 @@ class MySwarm {
   }
 
   onReceive(json, fromPeer) {
-    var data = JSON.parse(json);
+    let data = JSON.parse(json);
     this.listeners.forEach((listener) => {
       listener.onReceive(data, fromPeer);
     });
@@ -50,19 +50,19 @@ class WebSwarm extends MySwarm {
   }
 
   broadcast(data) {
-    var json = JSON.stringify(data);
+    let json = JSON.stringify(data);
     this.rtcSwarm.peers.forEach((peer) => {
       peer.send(json);
     });
   }
   
   sendTo(peer, data) {
-    var json = JSON.stringify(data);
+    let json = JSON.stringify(data);
     peer.send(json);
   }
 
   makeWebRTCSwarm(swarmId, serverUrls) {
-    var swarm = new WebRTCSwarm(swarmId, serverUrls);
+    let swarm = new WebRTCSwarm(swarmId, serverUrls);
 
     if (!swarm.WEBRTC_SUPPORT) {
 
@@ -114,14 +114,14 @@ class FakeSwarm extends MySwarm {
   }
 
   broadcast(data) {
-    var json = JSON.stringify(data);
+    let json = JSON.stringify(data);
     this.peers.forEach((peer) => {
       peer.onReceive(json, this);
     });
   }
   
   sendTo(peer, data) {
-    var json = JSON.stringify(data);
+    let json = JSON.stringify(data);
     peer.onReceive(json, this);
   }
   
@@ -151,7 +151,7 @@ class FakeServer {
     if (!this.fakeSwarmsMap.has(swarmId)) {
       this.fakeSwarmsMap.set(swarmId, new Array());
     }
-    var fakeSwarms = this.fakeSwarmsMap.get(swarmId);
+    let fakeSwarms = this.fakeSwarmsMap.get(swarmId);
 
     fakeSwarms.forEach((other) => {
       other.connect(initiator, initiator.myId);
@@ -164,7 +164,7 @@ class FakeServer {
     if (!this.fakeSwarmsMap.has(swarmId)) {
       return; // No need to disconnect from undefined swarm.
     }
-    var fakeSwarms = this.fakeSwarmsMap.get(swarmId);
+    let fakeSwarms = this.fakeSwarmsMap.get(swarmId);
 
     removeFromArray(fakeSwarms, initiator);
     fakeSwarms.forEach((other) => {
