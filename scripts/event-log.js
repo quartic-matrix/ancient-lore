@@ -38,14 +38,12 @@ class LogEvent {
 class LogEventConsumer {
   constructor(consumableEvents) {
     this.consumableEventTypes = new Set();
-    consumableEvents.forEach(event => {
-      this.consumableEventTypes.add(event.type());
-    });
+    this.addConsumableEvents(consumableEvents);
   }
 
-  addConsumableTypes(consumableEventTypes) {
-    consumableEventTypes.forEach(eventType => {
-      this.consumableEventTypes.add(eventType);
+  addConsumableEvents(consumableEvents) {
+    consumableEvents.forEach(event => {
+      this.consumableEventTypes.add(event.type());
     });
   }
 

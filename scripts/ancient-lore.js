@@ -9,6 +9,21 @@ const playersHtml = `
   </div>
 `;
 
+function formatTime(timeInMs) {
+  let milliseconds = parseInt((timeInMs % 1000) / 100);
+  let seconds = Math.floor((timeInMs / 1000) % 60);
+  let minutes = Math.floor((timeInMs / (1000 * 60)) % 60);
+  let hours = Math.floor((timeInMs / (1000 * 60 * 60)) % 24);
+
+  let formattedTime = hours ? hours + ":" : "";
+  formattedTime += hours || minutes ? makeTwoDigits(minutes) + ":" : "";
+  return formattedTime + makeTwoDigits(seconds) + "." + milliseconds;
+}
+
+function makeTwoDigits(number) {
+  return ("0" + number).slice(-2);
+}
+
 class AncientLoreGame extends BasicGame {
   constructor (eventLog, domElement, playerName) {
     super(eventLog);
@@ -80,7 +95,15 @@ class AncientLoreModel extends LogEventConsumer {
   reset() {
     this.locations = [];
     this.players = [];
-    // TODO be able to reset the BoardUpdater.
+    /** TODO be able to reset the BoardUpdater. Or probably this.board and
+     * this.generator shouldn't need to be reset, instead they should be
+     * fully updated when the export ends.
+     * 
+     * When reseting and applying all the events (maybe also when applying
+     * a batch of events), then could take a clone of the board element,
+     * make the changes to that, and then replace the displayed board 
+     * element, or even recreate the board element from scratch.
+     */
   }
 
   onPeerJoins(asPlayerName) {
@@ -88,6 +111,12 @@ class AncientLoreModel extends LogEventConsumer {
     this.players.push(player);
   }
 
+  /**
+   * TODO move the allocation of units to AncientLoreEventGenerator::startGame
+   * put `units` into the StartGameEvent so that all players get the same setup.
+   * 
+   * TODO Only react to the first StartGameEvent received.
+   */
   onStartGame(numPlayers) {
     const numStartingUnitsPerPlayer = 8;
     const numLocations = 3;
@@ -162,25 +191,90 @@ class AncientLoreBoardUpdater {
 
 class AncientLoreInputCollector {
   constructor(rootElement) {
+    this.overlay = rootElement.querySelector(".input-overlay");
     this.board = rootElement.querySelector(".board");
 
-    this.init();
+    this.numSettlements = 3;
+
+    this.test();
   }
 
-  init() {
-    for (let i = 0; i < 3; i++) {
-      let settlement = this.board.querySelector(".settlement" + i + ".selection");
-      settlement.addEventListener("click", (event) => {
+  test() {
+    this.startSelectingASettlement();
+    setTimeout(() => {
+      this.startSelectingASettlement();
+    }, 7000);
+  }
+
+  startSelectingASettlement() {
+    let selectedId;
+
+    let settlementSelectionHandlers = []
+    for (let i = 0; i < this.numSettlements; i++) {
+      settlementSelectionHandlers.push((event) => {
         event.stopPropagation();
-        let highlights = this.board.querySelectorAll(".highlight"); 
-        highlights.forEach(highlight => {
-          if (highlight.matches(".settlement" + i)) {
-            highlight.style.visibility = "visible";
-          } else {
-            highlight.style.visibility = "hidden";
-          }
-        });
+        this.updateSelection(i);
+        selectedId = i;
       });
+      let settlement = this.board.querySelector(".settlement" + i + ".selection");
+      settlement.addEventListener("click", settlementSelectionHandlers[i]);
     }
+
+    // Make a random selection so there is something selected when the timer
+    // runs out. TODO handle non-selection more gracefully.
+    let highlights = this.board.querySelectorAll(".highlight"); 
+    selectedId = Math.floor(Math.random() * highlights.length);
+    this.updateSelection(selectedId);
+
+    let countdownDisplay = document.createElement("p");
+    countdownDisplay.className = "countdown-display";
+    this.overlay.appendChild(countdownDisplay);
+    let countdownContext = {
+      timeRemainingInMs: 5000, frequencyInMs: 101
+    };
+    let onFinishFn = () => { 
+      this.finishSelectingASettlement(selectedId, settlementSelectionHandlers); 
+    };
+    let intervalId = setInterval(
+      () => { this.showCountdown(
+        countdownContext, countdownDisplay, intervalId, onFinishFn
+      )}, 
+      countdownContext.frequencyInMs
+    );
+  }
+
+  showCountdown(
+    countdownContext, domElement, intervalId, onFinishFn
+  ) {
+    domElement.innerHTML = formatTime(countdownContext.timeRemainingInMs);
+    countdownContext.timeRemainingInMs -= countdownContext.frequencyInMs;
+    if (countdownContext.timeRemainingInMs <= 0) {
+      clearInterval(intervalId);
+      onFinishFn();
+    }
+  }
+
+  finishSelectingASettlement(selectedId, settlementSelectionHandlers) {
+    this.updateSelection(selectedId, "#ff0000");
+
+    for (let i = 0; i < this.numSettlements; i++) {
+      let settlement = this.board.querySelector(".settlement" + i + ".selection");
+      settlement.removeEventListener("click", settlementSelectionHandlers[i]);
+    }
+
+    let countdownDisplay = this.overlay.querySelector(".countdown-display"); 
+    countdownDisplay.remove();
+  }
+  
+  updateSelection(i, selectedStroke = "#ffcc00") {
+    let highlights = this.board.querySelectorAll(".highlight"); 
+    highlights.forEach(highlight => {
+      if (highlight.matches(".settlement" + i)) {
+        highlight.style.visibility = "visible";
+        highlight.style.stroke = selectedStroke;
+      } else {
+        highlight.style.visibility = "hidden";
+      }
+    });
   }
 }
