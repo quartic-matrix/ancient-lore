@@ -24,6 +24,52 @@ function makeTwoDigits(number) {
   return ("0" + number).slice(-2);
 }
 
+class StartAncientLoreEvent extends LogEvent {
+  
+  static type() {
+    return "ancient-lore-start";
+  }
+
+  static makeFromData(objectFromData) {
+    return new StartAncientLoreEvent(
+      objectFromData.timestamp,
+      objectFromData.peerId,
+      objectFromData.options, 
+      objectFromData.units
+    );
+  }
+
+  static makeNow(timestampOffset, peerId, options) {
+    const numStartingUnitsPerPlayer = 8;
+
+    let units = [];
+    
+    for (let playerId = 0; playerId < options.numPlayers; ++playerId) {
+      for (let unitI = 0; unitI < numStartingUnitsPerPlayer; ++unitI) {
+        let locationId = Math.floor(Math.random() * options.numLocations);
+        units.push({locationId: locationId, playerId: playerId});
+      }
+    }
+
+    return new StartAncientLoreEvent(
+      LogEvent.makeTimestamp(timestampOffset),
+      peerId,
+      options, 
+      units
+    );
+  }
+
+  constructor(timestamp, peerId, options, units) {
+    super(timestamp, peerId, StartAncientLoreEvent.type());
+    this.options = options;
+    this.units = units;
+  }
+
+  notify(eventListener) {
+    eventListener.onStartGame(this.options, this.units);
+  }
+}
+
 class AncientLoreGame extends BasicGame {
   constructor (eventLog, domElement, playerName) {
     super(eventLog);
@@ -53,12 +99,6 @@ class AncientLoreGame extends BasicGame {
 
     this.join(playerName);
     this.eventLog.broadcastAllEvents();
-
-    // TODO Should be called via an event from 
-    // AncientLoreEventGenerator::startGame
-    // this.model.onPeerJoins("Spoof-1");
-    // this.model.onPeerJoins("Spoof-2");
-    // this.model.onStartGame(3);
   }
 }
 
@@ -84,17 +124,19 @@ class PlayerList extends LogEventConsumer {
 
 class AncientLoreModel extends LogEventConsumer {
   constructor(boardUpdater, eventGenerator) {
-    super([PeerJoinEvent]);
+    super([PeerJoinEvent, StartAncientLoreEvent]);
     this.board = boardUpdater;
     this.generator = eventGenerator;
 
     this.locations = []; // Setup in setupBoard.
     this.players = []; // Added to in onPeerJoins.
+    this.isGameStarted = false;
   }
 
   reset() {
     this.locations = [];
     this.players = [];
+    this.isGameStarted = false;
     /** TODO be able to reset the BoardUpdater. Or probably this.board and
      * this.generator shouldn't need to be reset, instead they should be
      * fully updated when the export ends.
@@ -111,37 +153,25 @@ class AncientLoreModel extends LogEventConsumer {
     this.players.push(player);
   }
 
-  /**
-   * TODO move the allocation of units to AncientLoreEventGenerator::startGame
-   * put `units` into the StartGameEvent so that all players get the same setup.
-   * 
-   * TODO Only react to the first StartGameEvent received.
-   */
-  onStartGame(numPlayers) {
-    const numStartingUnitsPerPlayer = 8;
-    const numLocations = 3;
-
-    let units = [];
-    
-    for (let playerId = 0; playerId < numPlayers; ++playerId) {
-      for (let unitI = 0; unitI < numStartingUnitsPerPlayer; ++unitI) {
-        let locationId = Math.floor(Math.random() * numLocations);
-        units.push({locationId: locationId, playerId: playerId});
-      }
+  onStartGame(options, units) {
+    if (this.isGameStarted) {
+      return; // Only react to the first StartGameEvent received.
     }
-
-    this.setupBoard(3, units);
+    this.board.loadBoard(options);
+    this.setupBoard(options, units);
+    this.isGameStarted = true;
+    this.generator.onStartGame();
   }
 
-  setupBoard(numLocations, units) {
+  setupBoard(options, units) {
     // Create the correct number of locations.
-    for (let i = 0; i < numLocations; i++) {
+    for (let i = 0; i < options.numLocations; i++) {
       this.locations.push({players: []});
     }
 
     // Set the units per player for each location to 0.
     this.locations.forEach(location => {
-      for (let index = 0; index < this.players.length; index++) {
+      for (let index = 0; index < options.numPlayers; index++) {
         location.players.push({numUnits: 0});
       }
     });
@@ -158,18 +188,25 @@ class AncientLoreModel extends LogEventConsumer {
 
 class AncientLoreBoardUpdater {
   constructor(rootElement) {
-    this.displayedBoard = rootElement.querySelector(".board")
+    this.displayedBoard = rootElement.querySelector(".board");
+    this.board = this.displayedBoard;
   }
 
   startBatchUpdate(isFullRefresh) {
     this.board = this.displayedBoard.cloneNode(true);
     if (isFullRefresh) {
-      this.board.innerHTML = boardHtml.trim();
+      this.board.innerHTML = "";
     }
   }
 
   finishBatchUpdate() {
     this.displayedBoard = this.board;
+  }
+
+  loadBoard(options) {
+    if (options.numLocations == 3) {
+      this.board.innerHTML = boardHtml.trim();
+    }
   }
 
   updateLocations(locations) {
@@ -197,12 +234,26 @@ class AncientLoreEventGenerator {
     this.eventLog = eventLog;
     this.input = inputCollector;
 
-    this.input.showGameSetupOptions(this.startGame);
+    this.eventLog.registerEventType(StartAncientLoreEvent);
+
+    this.input.showGameSetupOptions(this.startGame.bind(this));
   }
 
   startGame(options) {
-    // TODO create onGameStart StartGameEvent
-    console.log('TODO create onGameStart StartGameEvent: ', options.numPlayers);
+    let startGameEvent = StartAncientLoreEvent.makeNow(
+      0, this.eventLog.swarm.myId, options
+    );
+    this.eventLog.add(startGameEvent);
+  }
+
+  onStartGame() {
+    this.input.hideGameSetupOptions();
+    this.input.startSelectingASettlement(this.moveUnits.bind(this));
+  }
+
+  moveUnits(settlementId) {
+    console.log('TODO select where to move units to. From settlement: ', settlementId);
+
   }
 }
 
@@ -210,67 +261,73 @@ class AncientLoreInputCollector {
   constructor(rootElement) {
     this.overlay = rootElement.querySelector(".input-overlay");
     this.board = rootElement.querySelector(".board");
-
-    this.numSettlements = this.board.querySelectorAll(".buildings").length; 
+    this.startGameDiv;
 
     this.test();
   }
 
   test() {
-    // this.startSelectingASettlement();
-    // setTimeout(() => {
-    //   this.startSelectingASettlement();
-    // }, 7000);
   }
 
   showGameSetupOptions(sendTo) {
+    this.startGameDiv = document.createElement("div");
+    this.startGameDiv.style.position = "relative";
+    this.startGameDiv.style.margin = "2em";
+    this.startGameDiv.style.width = "50em";
+
+    let label = document.createElement("label");
+    label.innerHTML = "Number of players "
+
     let numPlayersInput = document.createElement("input");
     numPlayersInput.setAttribute("type" , "number");
     numPlayersInput.setAttribute("min" , "2");
     numPlayersInput.setAttribute("max" , "6");
     numPlayersInput.setAttribute("value", "3");
     numPlayersInput.className = "num-expected-players";
-    numPlayersInput.style.display = "block";
-    numPlayersInput.style.margin = "auto";
 
     let startGameButton = document.createElement("input");
     startGameButton.setAttribute("type" , "button");
     startGameButton.value = "Start Game...";
+    startGameButton.style.display = "block";
     startGameButton.style.fontSize = "large";
     startGameButton.style.color = "#3377aa";
     startGameButton.addEventListener("click", () => {
-      let options = {numPlayers : numPlayersInput.value}
+      let options = {
+        numPlayers : parseInt(numPlayersInput.value),
+        numLocations : 3 // TODO perhaps a board should be selected
+      };
       sendTo(options);
     });
 
-    let startGameDiv = document.createElement("div");
-    startGameDiv.style.position = "relative";
-    startGameDiv.style.margin = "auto";
-    startGameDiv.style.width = "50%";
-    startGameDiv.appendChild(numPlayersInput);
-    startGameDiv.appendChild(startGameButton);
-    this.overlay.appendChild(startGameDiv);
+    this.startGameDiv.appendChild(label);
+    this.startGameDiv.appendChild(numPlayersInput);
+    this.startGameDiv.appendChild(startGameButton);
+    this.overlay.appendChild(this.startGameDiv);
   }
 
-  startSelectingASettlement() {
+  hideGameSetupOptions() {
+    this.startGameDiv.remove();
+  }
+
+  startSelectingASettlement(sendTo) {
     let selectedId;
 
-    let settlementSelectionHandlers = []
-    for (let i = 0; i < this.numSettlements; i++) {
+    let numSettlements = this.board.querySelectorAll(".settlement").length; 
+    let settlementSelectionHandlers = [];
+    for (let i = 0; i < numSettlements; i++) {
       settlementSelectionHandlers.push((event) => {
         event.stopPropagation();
-        this.updateSelection(i);
+        this.updateSelectedSettlement(i);
         selectedId = i;
       });
-      let settlement = this.board.querySelector(".settlement" + i + ".selection");
+      let settlement = this.board.querySelector(".settlement" + i + ".settlement");
       settlement.addEventListener("click", settlementSelectionHandlers[i]);
     }
 
     // Make a random selection so there is something selected when the timer
     // runs out. TODO handle non-selection more gracefully.
-    let highlights = this.board.querySelectorAll(".highlight"); 
-    selectedId = Math.floor(Math.random() * highlights.length);
-    this.updateSelection(selectedId);
+    selectedId = Math.floor(Math.random() * numSettlements);
+    this.updateSelectedSettlement(selectedId);
 
     let countdownDisplay = document.createElement("p");
     countdownDisplay.className = "countdown-display";
@@ -280,6 +337,7 @@ class AncientLoreInputCollector {
     };
     let onFinishFn = () => { 
       this.finishSelectingASettlement(selectedId, settlementSelectionHandlers); 
+      sendTo(selectedId);
     };
     let intervalId = setInterval(
       () => { this.showCountdown(
@@ -301,10 +359,10 @@ class AncientLoreInputCollector {
   }
 
   finishSelectingASettlement(selectedId, settlementSelectionHandlers) {
-    this.updateSelection(selectedId, "#ff0000");
+    this.updateSelectedSettlement(selectedId, "#ff0000");
 
-    for (let i = 0; i < this.numSettlements; i++) {
-      let settlement = this.board.querySelector(".settlement" + i + ".selection");
+    for (let i = 0; i < settlementSelectionHandlers.length; i++) {
+      let settlement = this.board.querySelector(".settlement" + i + ".settlement");
       settlement.removeEventListener("click", settlementSelectionHandlers[i]);
     }
 
@@ -312,7 +370,7 @@ class AncientLoreInputCollector {
     countdownDisplay.remove();
   }
   
-  updateSelection(i, selectedStroke = "#ffcc00") {
+  updateSelectedSettlement(i, selectedStroke = "#ffcc00") {
     let highlights = this.board.querySelectorAll(".highlight"); 
     highlights.forEach(highlight => {
       if (highlight.matches(".settlement" + i)) {
