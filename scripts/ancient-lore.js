@@ -56,9 +56,9 @@ class AncientLoreGame extends BasicGame {
 
     // TODO Should be called via an event from 
     // AncientLoreEventGenerator::startGame
-    this.model.onPeerJoins("Spoof-1");
-    this.model.onPeerJoins("Spoof-2");
-    this.model.onStartGame(3);
+    // this.model.onPeerJoins("Spoof-1");
+    // this.model.onPeerJoins("Spoof-2");
+    // this.model.onStartGame(3);
   }
 }
 
@@ -156,17 +156,20 @@ class AncientLoreModel extends LogEventConsumer {
   }
 }
 
-class AncientLoreEventGenerator {
-  constructor(eventLog, inputCollector) {
-    this.eventLog = eventLog;
-    this.input = inputCollector;
-  }
-}
-
 class AncientLoreBoardUpdater {
   constructor(rootElement) {
-    this.board = rootElement.querySelector(".board")
-    this.board.innerHTML += boardHtml.trim();
+    this.displayedBoard = rootElement.querySelector(".board")
+  }
+
+  startBatchUpdate(isFullRefresh) {
+    this.board = this.displayedBoard.cloneNode(true);
+    if (isFullRefresh) {
+      this.board.innerHTML = boardHtml.trim();
+    }
+  }
+
+  finishBatchUpdate() {
+    this.displayedBoard = this.board;
   }
 
   updateLocations(locations) {
@@ -189,21 +192,64 @@ class AncientLoreBoardUpdater {
   }
 }
 
+class AncientLoreEventGenerator {
+  constructor(eventLog, inputCollector) {
+    this.eventLog = eventLog;
+    this.input = inputCollector;
+
+    this.input.showGameSetupOptions(this.startGame);
+  }
+
+  startGame(options) {
+    // TODO create onGameStart StartGameEvent
+    console.log('TODO create onGameStart StartGameEvent: ', options.numPlayers);
+  }
+}
+
 class AncientLoreInputCollector {
   constructor(rootElement) {
     this.overlay = rootElement.querySelector(".input-overlay");
     this.board = rootElement.querySelector(".board");
 
-    this.numSettlements = 3;
+    this.numSettlements = this.board.querySelectorAll(".buildings").length; 
 
     this.test();
   }
 
   test() {
-    this.startSelectingASettlement();
-    setTimeout(() => {
-      this.startSelectingASettlement();
-    }, 7000);
+    // this.startSelectingASettlement();
+    // setTimeout(() => {
+    //   this.startSelectingASettlement();
+    // }, 7000);
+  }
+
+  showGameSetupOptions(sendTo) {
+    let numPlayersInput = document.createElement("input");
+    numPlayersInput.setAttribute("type" , "number");
+    numPlayersInput.setAttribute("min" , "2");
+    numPlayersInput.setAttribute("max" , "6");
+    numPlayersInput.setAttribute("value", "3");
+    numPlayersInput.className = "num-expected-players";
+    numPlayersInput.style.display = "block";
+    numPlayersInput.style.margin = "auto";
+
+    let startGameButton = document.createElement("input");
+    startGameButton.setAttribute("type" , "button");
+    startGameButton.value = "Start Game...";
+    startGameButton.style.fontSize = "large";
+    startGameButton.style.color = "#3377aa";
+    startGameButton.addEventListener("click", () => {
+      let options = {numPlayers : numPlayersInput.value}
+      sendTo(options);
+    });
+
+    let startGameDiv = document.createElement("div");
+    startGameDiv.style.position = "relative";
+    startGameDiv.style.margin = "auto";
+    startGameDiv.style.width = "50%";
+    startGameDiv.appendChild(numPlayersInput);
+    startGameDiv.appendChild(startGameButton);
+    this.overlay.appendChild(startGameDiv);
   }
 
   startSelectingASettlement() {
