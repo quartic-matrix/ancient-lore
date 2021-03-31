@@ -4981,6 +4981,8 @@ const boardHtml = `
          x="321.33704"
          id="tspan2061">0</tspan></text>
     <g
+       fromSettlement="2"
+       toSettlement="0"
        class="arrow settlement0 settlement2 to-settlement0 move"
        id="g2042">
       <path
@@ -4994,6 +4996,8 @@ const boardHtml = `
          d="m 214.33589,154.71415 -8.31662,4.74314 -0.0224,0.009 0.006,6.3e-4 -0.006,0.002 0.0241,0.003 9.3273,2.15984 c 0,0 -1.46807,-1.04165 -3.04388,-3.08771 0.92313,-2.41211 2.03094,-3.83072 2.03094,-3.83072 z" />
     </g>
     <g
+       fromSettlement="1"
+       toSettlement="0"
        class="arrow settlement0 settlement1 to-settlement0 move"
        id="g2021">
       <path
@@ -5010,6 +5014,8 @@ const boardHtml = `
          transform="rotate(-33.410049,177.31348,168.70956)" />
     </g>
     <g
+       fromSettlement="0"
+       toSettlement="1"
        class="arrow settlement0 settlement1 to-settlement1 move"
        id="g2025">
       <path
@@ -5026,6 +5032,8 @@ const boardHtml = `
          transform="rotate(126.9525,231.0675,133.78126)" />
     </g>
     <g
+       fromSettlement="0"
+       toSettlement="2"
        class="arrow settlement0 settlement2 to-settlement2 move"
        id="g2038">
       <path
@@ -5043,6 +5051,8 @@ const boardHtml = `
          transform="rotate(-169.71951,245.69935,160.21601)" />
     </g>
     <g
+       fromSettlement="2"
+       toSettlement="1"
        class="arrow settlement2 settlement1 to-settlement1 move"
        id="g2029">
       <path
@@ -5060,6 +5070,8 @@ const boardHtml = `
          transform="rotate(23.127487,409.0342,285.683)" />
     </g>
     <g
+       fromSettlement="1"
+       toSettlement="2"
        class="arrow settlement2 settlement1 to-settlement2 move"
        id="g2034">
       <path

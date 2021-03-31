@@ -248,12 +248,27 @@ class AncientLoreEventGenerator {
 
   onStartGame() {
     this.input.hideGameSetupOptions();
-    this.input.startSelectingASettlement(this.moveUnits.bind(this));
+    this.moveUnits();
   }
 
-  moveUnits(settlementId) {
-    console.log('TODO select where to move units to. From settlement: ', settlementId);
+  moveUnits() {
+    let toSettlementId;
+    let fromSettlements = [];
+    this.input.startSelectingASettlement((selectedSettlementId) => {
+      toSettlementId = selectedSettlementId;
 
+      this.input.startSelectingUnitsToMove(
+        toSettlementId, 
+        (numUnitsFromSettlements) => {
+          for (let [key, value] of numUnitsFromSettlements) {
+            fromSettlements.push({settlementId: key, numUnits: value});
+          }
+          this.input.updateSelectedSettlement(-1);
+
+          console.log('TODO send a MoveUnitsEvent. To: ', toSettlementId);
+        }
+      );
+    });
   }
 }
 
@@ -270,6 +285,12 @@ class AncientLoreInputCollector {
   test() {
   }
 
+  /**
+   * @param {*} sendTo(gameSetupOptions)
+   *    gameSetupOptions has:
+   *      numPlayers,
+   *      numLocations
+   */
   showGameSetupOptions(sendTo) {
     this.startGameDiv = document.createElement("div");
     this.startGameDiv.style.position = "relative";
@@ -310,6 +331,9 @@ class AncientLoreInputCollector {
     this.startGameDiv.remove();
   }
 
+  /**
+   * @param {*} sendTo(selectedSettlementId)
+   */
   startSelectingASettlement(sendTo) {
     let selectedId;
 
@@ -358,6 +382,66 @@ class AncientLoreInputCollector {
       }
     });
   }
+
+  /**
+   * @param {*} sendTo(numUnitsFromSettlements)
+   */
+  startSelectingUnitsToMove(toSettlementId, sendTo) {
+    let numFromSettlements = new Map();
+
+    let toSettlementClass = ".settlement" + toSettlementId;
+
+    let moveElements = this.board.querySelectorAll(".move" + toSettlementClass); 
+    moveElements.forEach((element) => {
+      element.style.visibility = "visible";
+    });
+
+    let arrows = this.board.querySelectorAll(".arrow" + toSettlementClass); 
+    let arrowClickHandlers = [];
+    arrows.forEach((arrow) => {
+      let arrowToSettlement = parseInt(arrow.getAttribute("tosettlement"));
+      let arrowFromSettlement = parseInt(arrow.getAttribute("fromsettlement"));
+      let isInward = arrowToSettlement == toSettlementId;
+      let otherSettlementId = isInward ? arrowFromSettlement : arrowToSettlement;
+      let numberElement = this.board.querySelector(
+        ".move.number" + toSettlementClass + ".settlement" + otherSettlementId
+      );
+      if (!numFromSettlements.has(otherSettlementId)) {
+        numFromSettlements.set(otherSettlementId, 0)
+        numberElement.children[0].innerHTML = "0";
+      }
+      let onClickFn = (event) => {
+        event.stopPropagation();
+        let numUnits = Math.max(numFromSettlements.get(otherSettlementId) + 2*isInward - 1, 0);
+        numFromSettlements.set(otherSettlementId, numUnits);
+        numberElement.children[0].innerHTML = numUnits.toString();
+      }
+      arrowClickHandlers.push({
+        element: arrow,
+        function: onClickFn
+      });
+      arrow.addEventListener("click", onClickFn);
+    });
+
+    this.countdown = new Countdown(10000, 101, this.overlay);
+    let onFinishFn = () => { 
+      this.finishSelectingUnitsToMove(moveElements, arrowClickHandlers); 
+      sendTo(numFromSettlements);
+    };
+    this.countdown.start(onFinishFn);
+  }
+
+  finishSelectingUnitsToMove(moveElements, arrowClickHandlers) {
+    moveElements.forEach((element) => {
+      element.style.visibility = "hidden";
+    });
+
+    arrowClickHandlers.forEach((handler) => {
+      handler.element.removeEventListener("click", handler.function);
+    });
+  }
+
+
 }
 
 class Countdown {
