@@ -262,6 +262,7 @@ class AncientLoreInputCollector {
     this.overlay = rootElement.querySelector(".input-overlay");
     this.board = rootElement.querySelector(".board");
     this.startGameDiv;
+    this.countdown;
 
     this.test();
   }
@@ -329,33 +330,12 @@ class AncientLoreInputCollector {
     selectedId = Math.floor(Math.random() * numSettlements);
     this.updateSelectedSettlement(selectedId);
 
-    let countdownDisplay = document.createElement("p");
-    countdownDisplay.className = "countdown-display";
-    this.overlay.appendChild(countdownDisplay);
-    let countdownContext = {
-      timeRemainingInMs: 5000, frequencyInMs: 101
-    };
+    this.countdown = new Countdown(5000, 101, this.overlay);
     let onFinishFn = () => { 
       this.finishSelectingASettlement(selectedId, settlementSelectionHandlers); 
       sendTo(selectedId);
     };
-    let intervalId = setInterval(
-      () => { this.showCountdown(
-        countdownContext, countdownDisplay, intervalId, onFinishFn
-      )}, 
-      countdownContext.frequencyInMs
-    );
-  }
-
-  showCountdown(
-    countdownContext, domElement, intervalId, onFinishFn
-  ) {
-    domElement.innerHTML = formatTime(countdownContext.timeRemainingInMs);
-    countdownContext.timeRemainingInMs -= countdownContext.frequencyInMs;
-    if (countdownContext.timeRemainingInMs <= 0) {
-      clearInterval(intervalId);
-      onFinishFn();
-    }
+    this.countdown.start(onFinishFn);
   }
 
   finishSelectingASettlement(selectedId, settlementSelectionHandlers) {
@@ -365,9 +345,6 @@ class AncientLoreInputCollector {
       let settlement = this.board.querySelector(".settlement" + i + ".settlement");
       settlement.removeEventListener("click", settlementSelectionHandlers[i]);
     }
-
-    let countdownDisplay = this.overlay.querySelector(".countdown-display"); 
-    countdownDisplay.remove();
   }
   
   updateSelectedSettlement(i, selectedStroke = "#ffcc00") {
@@ -380,5 +357,37 @@ class AncientLoreInputCollector {
         highlight.style.visibility = "hidden";
       }
     });
+  }
+}
+
+class Countdown {
+  constructor(
+    timeRemainingInMs, frequencyInMs, domElement
+  ) {
+    this.onFinishFn;
+    this.timeRemainingInMs = timeRemainingInMs;
+    this.frequencyInMs = frequencyInMs;
+    this.display = document.createElement("p");
+    this.display.className = "countdown-display";
+    domElement.appendChild(this.display);
+
+  }
+
+  start(onFinishFn) {
+    this.onFinishFn = onFinishFn;
+    this.intervalId = setInterval(
+      this.update.bind(this), 
+      this.frequencyInMs
+    );
+  }
+
+  update() {
+    this.display.innerHTML = formatTime(this.timeRemainingInMs);
+    this.timeRemainingInMs -= this.frequencyInMs;
+    if (this.timeRemainingInMs <= 0) {
+      clearInterval(this.intervalId);
+      this.display.remove();
+      this.onFinishFn();
+    }
   }
 }
