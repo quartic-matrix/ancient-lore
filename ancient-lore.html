@@ -33,7 +33,7 @@
 
       function init() {
         let domElements = [document.getElementById("game-0")];
-        for (let index = 1; index < 2; index++) {
+        for (let index = 1; index < 3; index++) {
           domElements.push(cloneDomElement(domElements[0], "game-" + index));
         }
 
@@ -45,6 +45,9 @@
         ));
         games.push(makeAncientLoreGame(
           swarmIds[0], channels[0], domElements[1], getPlayerName() + "-1"
+        ));
+        games.push(makeAncientLoreGame(
+          swarmIds[0], channels[0], domElements[2], getPlayerName() + "-2"
         ));
       }
 

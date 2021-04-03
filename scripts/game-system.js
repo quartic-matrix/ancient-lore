@@ -35,7 +35,7 @@ class PeerJoinEvent extends LogEvent {
   }
 
   notify(eventListener) {
-    eventListener.onPeerJoins(this.playerName);
+    eventListener.onPeerJoins(this.playerName, this.peerId);
   }
 }
 

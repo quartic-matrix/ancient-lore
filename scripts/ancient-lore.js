@@ -25,7 +25,7 @@ function makeTwoDigits(number) {
 }
 
 class StartAncientLoreEvent extends LogEvent {
-  
+
   static type() {
     return "ancient-lore-start";
   }
@@ -44,7 +44,7 @@ class StartAncientLoreEvent extends LogEvent {
 
     let units = [];
     
-    for (let playerId = 0; playerId < options.numPlayers; ++playerId) {
+    for (let playerId = 0; playerId < options.players.length; ++playerId) {
       for (let unitI = 0; unitI < numStartingUnitsPerPlayer; ++unitI) {
         let locationId = Math.floor(Math.random() * options.numLocations);
         units.push({locationId: locationId, playerId: playerId});
@@ -70,6 +70,41 @@ class StartAncientLoreEvent extends LogEvent {
   }
 }
 
+class MoveUnitsEvent extends LogEvent {
+  
+  static type() {
+    return "ancient-lore-move-units";
+  }
+
+  static makeFromData(objectFromData) {
+    return new MoveUnitsEvent(
+      objectFromData.timestamp,
+      objectFromData.peerId,
+      objectFromData.playerId,
+      objectFromData.movements
+    );
+  }
+
+  static makeNow(timestampOffset, peerId, playerId, movements) {
+    return new MoveUnitsEvent(
+      LogEvent.makeTimestamp(timestampOffset),
+      peerId,
+      playerId, 
+      movements
+    );
+  }
+
+  constructor(timestamp, peerId, playerId, movements) {
+    super(timestamp, peerId, MoveUnitsEvent.type());
+    this.playerId = playerId;
+    this.movements = movements;
+  }
+
+  notify(eventListener) {
+    eventListener.onMoveUnits(this.playerId, this.movements);
+  }
+}
+
 class AncientLoreGame extends BasicGame {
   constructor (eventLog, domElement, playerName) {
     super(eventLog);
@@ -88,10 +123,15 @@ class AncientLoreGame extends BasicGame {
      * the peerId associated with the original onPeerJoins event is used to
      * determine the playerId.
      */
+    
+    this.gameSetup = new AncientLoreGameSetup(domElement);
+    this.inputCollector =  new AncientLoreInputCollector(domElement);
+    this.generator = new AncientLoreEventGenerator(
+      eventLog, this.gameSetup, this.inputCollector
+    );
+    
     this.board = new AncientLoreBoardUpdater(domElement);
-    this.input = new AncientLoreInputCollector(domElement);
-    this.generator = new AncientLoreEventGenerator(eventLog, this.input);
-    this.playerList = new PlayerList(domElement);
+    this.playerList = new PlayerList(domElement, playerName);
     this.model = new AncientLoreModel(
       this.board, this.playerList, this.generator
     );
@@ -103,9 +143,10 @@ class AncientLoreGame extends BasicGame {
 }
 
 class PlayerList  { 
-  constructor(rootElement) {
+  constructor(rootElement, myPlayerName) {
     rootElement.querySelector(".players").innerHTML += playersHtml.trim();
     this.playerListElement = rootElement.querySelector(".player-list");
+    this.myPlayerName = myPlayerName;
   }
 
   reset() {
@@ -114,77 +155,13 @@ class PlayerList  {
 
   onPeerJoins(asPlayerName) {
     let para = document.createElement("p");
+    if (this.myPlayerName == asPlayerName) {
+      para.style.fontWeight = "bold";
+    }
     let node = document.createTextNode(asPlayerName);
     para.appendChild(node);
     
     this.playerListElement.appendChild(para);
-  }
-}
-
-class AncientLoreModel extends LogEventConsumer {
-  constructor(boardUpdater, playerList, eventGenerator) {
-    super([PeerJoinEvent, StartAncientLoreEvent]);
-    this.board = boardUpdater;
-    this.generator = eventGenerator;
-    this.playerList = playerList
-
-    this.locations = []; // Setup in setupBoard.
-    this.players = []; // Added to in onPeerJoins.
-    this.isGameStarted = false;
-  }
-
-  reset() {
-    this.locations = [];
-    this.players = [];
-    this.isGameStarted = false;
-    this.playerList.reset();
-    /** TODO be able to reset the BoardUpdater. Or probably this.board and
-     * this.generator shouldn't need to be reset, instead they should be
-     * fully updated when the export ends.
-     * 
-     * When reseting and applying all the events (maybe also when applying
-     * a batch of events), then could take a clone of the board element,
-     * make the changes to that, and then replace the displayed board 
-     * element, or even recreate the board element from scratch.
-     */
-  }
-
-  onPeerJoins(asPlayerName) {
-    let player = {name: asPlayerName}
-    this.players.push(player);
-    this.playerList.onPeerJoins(asPlayerName);
-  }
-
-  onStartGame(options, units) {
-    if (this.isGameStarted) {
-      return; // Only react to the first StartGameEvent received.
-    }
-    this.board.loadBoard(options);
-    this.setupBoard(options, units);
-    this.isGameStarted = true;
-    this.generator.onStartGame();
-  }
-
-  setupBoard(options, units) {
-    // Create the correct number of locations.
-    for (let i = 0; i < options.numLocations; i++) {
-      this.locations.push({players: []});
-    }
-
-    // Set the units per player for each location to 0.
-    this.locations.forEach(location => {
-      for (let index = 0; index < options.numPlayers; index++) {
-        location.players.push({numUnits: 0});
-      }
-    });
-
-    // Add the units to the appropriate locations.
-    units.forEach(unit => {
-      ++this.locations[unit.locationId].players[unit.playerId].numUnits;
-    });
-
-    // Tell the board updater to update the locations
-    this.board.updateLocations(this.locations);
   }
 }
 
@@ -231,26 +208,110 @@ class AncientLoreBoardUpdater {
   }
 }
 
+class AncientLoreModel extends LogEventConsumer {
+  constructor(boardUpdater, playerList, eventGenerator) {
+    super([PeerJoinEvent, StartAncientLoreEvent]);
+    this.board = boardUpdater;
+    this.generator = eventGenerator;
+    this.playerList = playerList
+
+    this.locations = []; // Setup in setupBoard.
+    this.players = []; // Added to in onStartGame.
+    this.isGameStarted = false;
+  }
+
+  reset() {
+    this.locations = [];
+    this.isGameStarted = false;
+    this.playerList.reset();
+    this.generator.reset();
+    /** TODO be able to reset the BoardUpdater. Or probably this.board and
+     * this.generator shouldn't need to be reset, instead they should be
+     * fully updated when the export ends.
+     * 
+     * When reseting and applying all the events (maybe also when applying
+     * a batch of events), then could take a clone of the board element,
+     * make the changes to that, and then replace the displayed board 
+     * element, or even recreate the board element from scratch.
+     */
+  }
+
+  onPeerJoins(asPlayerName, peerId) {
+    this.playerList.onPeerJoins(asPlayerName);
+    this.generator.onPeerJoins(asPlayerName, peerId);
+  }
+
+  onStartGame(options, units) {
+    if (this.isGameStarted) {
+      return; // Only react to the first StartGameEvent received.
+    }
+    this.players = options.players;
+    this.board.loadBoard(options);
+    this.setupBoard(options, units);
+    this.isGameStarted = true;
+    this.generator.onStartGame(options);
+  }
+
+  setupBoard(options, units) {
+    // Create the correct number of locations.
+    for (let i = 0; i < options.numLocations; i++) {
+      this.locations.push({players: []});
+    }
+
+    // Set the units per player for each location to 0.
+    this.locations.forEach(location => {
+      for (let index = 0; index < options.players.length; index++) {
+        location.players.push({numUnits: 0});
+      }
+    });
+
+    // Add the units to the appropriate locations.
+    units.forEach(unit => {
+      ++this.locations[unit.locationId].players[unit.playerId].numUnits;
+    });
+
+    // Tell the board updater to update the locations
+    this.board.updateLocations(this.locations);
+  }
+}
+
 class AncientLoreEventGenerator {
-  constructor(eventLog, inputCollector) {
+  constructor(eventLog, gameSetup, inputCollector) {
     this.eventLog = eventLog;
+    this.gameSetup = gameSetup;
     this.input = inputCollector;
+    this.myPlayerId = -1; // Set in onStartGame. -1 means observer.
 
     this.eventLog.registerEventType(StartAncientLoreEvent);
 
-    this.input.showGameSetupOptions(this.startGame.bind(this));
+    this.gameSetup.showGameSetupOptions(this.startGame.bind(this));
+  }
+
+  reset() {
+    this.gameSetup.reset();
+  }
+
+  onPeerJoins(asPlayerName, peerId) {
+    this.gameSetup.onPeerJoins(asPlayerName, peerId);
   }
 
   startGame(options) {
+    options.players.sort((a, b) => {return strcmp(a.peerId, b.peerId);});
+
     let startGameEvent = StartAncientLoreEvent.makeNow(
       0, this.eventLog.swarm.myId, options
     );
     this.eventLog.add(startGameEvent);
   }
 
-  onStartGame() {
-    this.input.hideGameSetupOptions();
-    this.moveUnits();
+  onStartGame(options) {
+    this.gameSetup.hideGameSetupOptions();
+    this.myPlayerId = options.players.findIndex((a) => {
+      return a.peerId == this.eventLog.swarm.myId;
+    });
+    if (this.myPlayerId >= 0) {
+      this.moveUnits();
+    }
   }
 
   moveUnits() {
@@ -274,40 +335,29 @@ class AncientLoreEventGenerator {
   }
 }
 
-class AncientLoreInputCollector {
+class AncientLoreGameSetup {
   constructor(rootElement) {
     this.overlay = rootElement.querySelector(".input-overlay");
-    this.board = rootElement.querySelector(".board");
-    this.startGameDiv;
-    this.countdown;
-
-    this.test();
+    this.playerSelection = document.createElement("div");
+    this.playerSelection.className = "player-selection";
   }
 
-  test() {
+  reset() {
+    this.playerSelection.innerHTML = "";
   }
 
   /**
    * @param {*} sendTo(gameSetupOptions)
    *    gameSetupOptions has:
-   *      numPlayers,
-   *      numLocations
+   *      options, which has:
+   *        numLocations
+   *        players
    */
   showGameSetupOptions(sendTo) {
     this.startGameDiv = document.createElement("div");
     this.startGameDiv.style.position = "relative";
     this.startGameDiv.style.margin = "2em";
     this.startGameDiv.style.width = "50em";
-
-    let label = document.createElement("label");
-    label.innerHTML = "Number of players "
-
-    let numPlayersInput = document.createElement("input");
-    numPlayersInput.setAttribute("type" , "number");
-    numPlayersInput.setAttribute("min" , "2");
-    numPlayersInput.setAttribute("max" , "6");
-    numPlayersInput.setAttribute("value", "3");
-    numPlayersInput.className = "num-expected-players";
 
     let startGameButton = document.createElement("input");
     startGameButton.setAttribute("type" , "button");
@@ -317,20 +367,55 @@ class AncientLoreInputCollector {
     startGameButton.style.color = "#3377aa";
     startGameButton.addEventListener("click", () => {
       let options = {
-        numPlayers : parseInt(numPlayersInput.value),
+        players : [],
         numLocations : 3 // TODO perhaps a board should be selected
       };
-      sendTo(options);
+      for (let child of this.playerSelection.children) {
+        if (child.className = "player-selected" && child.checked) {
+          options.players.push({
+            name: child.name,
+            peerId: child.peerId
+          });
+        }
+      }
+
+      if (options.players.length >= 2) {
+        sendTo(options);
+      }
     });
 
-    this.startGameDiv.appendChild(label);
-    this.startGameDiv.appendChild(numPlayersInput);
+    this.startGameDiv.appendChild(this.playerSelection);
     this.startGameDiv.appendChild(startGameButton);
     this.overlay.appendChild(this.startGameDiv);
   }
 
+  onPeerJoins(asPlayerName, peerId) {
+    let playerCheckbox = document.createElement("input");
+    playerCheckbox.setAttribute("type" , "checkbox");
+    playerCheckbox.className = "player-selected";
+    playerCheckbox.name = asPlayerName;
+    playerCheckbox.peerId = peerId;
+
+    let label = document.createElement("label");
+    label.innerHTML = asPlayerName + " ";
+
+    this.playerSelection.appendChild(playerCheckbox);
+    this.playerSelection.appendChild(label);
+    this.playerSelection.appendChild(document.createElement("br"));
+  }
+
   hideGameSetupOptions() {
     this.startGameDiv.remove();
+  }
+
+}
+
+class AncientLoreInputCollector {
+  constructor(rootElement) {
+    this.overlay = rootElement.querySelector(".input-overlay");
+    this.board = rootElement.querySelector(".board");
+    this.startGameDiv;
+    this.countdown;
   }
 
   /**
