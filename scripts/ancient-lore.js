@@ -91,20 +91,19 @@ class AncientLoreGame extends BasicGame {
     this.board = new AncientLoreBoardUpdater(domElement);
     this.input = new AncientLoreInputCollector(domElement);
     this.generator = new AncientLoreEventGenerator(eventLog, this.input);
-    this.model = new AncientLoreModel(this.board, this.generator);
-    this.modelUpdater = new LogEventConsumerUpdater(this.model, eventLog);
-
     this.playerList = new PlayerList(domElement);
-    this.playerListUpdater = new LogEventConsumerUpdater(this.playerList, eventLog);
+    this.model = new AncientLoreModel(
+      this.board, this.playerList, this.generator
+    );
+    this.modelUpdater = new LogEventConsumerUpdater(this.model, eventLog);
 
     this.join(playerName);
     this.eventLog.broadcastAllEvents();
   }
 }
 
-class PlayerList extends LogEventConsumer { 
+class PlayerList  { 
   constructor(rootElement) {
-    super([PeerJoinEvent]);
     rootElement.querySelector(".players").innerHTML += playersHtml.trim();
     this.playerListElement = rootElement.querySelector(".player-list");
   }
@@ -123,10 +122,11 @@ class PlayerList extends LogEventConsumer {
 }
 
 class AncientLoreModel extends LogEventConsumer {
-  constructor(boardUpdater, eventGenerator) {
+  constructor(boardUpdater, playerList, eventGenerator) {
     super([PeerJoinEvent, StartAncientLoreEvent]);
     this.board = boardUpdater;
     this.generator = eventGenerator;
+    this.playerList = playerList
 
     this.locations = []; // Setup in setupBoard.
     this.players = []; // Added to in onPeerJoins.
@@ -137,6 +137,7 @@ class AncientLoreModel extends LogEventConsumer {
     this.locations = [];
     this.players = [];
     this.isGameStarted = false;
+    this.playerList.reset();
     /** TODO be able to reset the BoardUpdater. Or probably this.board and
      * this.generator shouldn't need to be reset, instead they should be
      * fully updated when the export ends.
@@ -151,6 +152,7 @@ class AncientLoreModel extends LogEventConsumer {
   onPeerJoins(asPlayerName) {
     let player = {name: asPlayerName}
     this.players.push(player);
+    this.playerList.onPeerJoins(asPlayerName);
   }
 
   onStartGame(options, units) {
