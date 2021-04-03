@@ -164,9 +164,15 @@ class PlayerList  {
   update(players) {
     this.playerListElement.innerHTML = "";
 
+    for (const player of players) {
+      this.display(player.name, player);
+    }
+
     for (const peer of this.peers) {
       const player = players.find((a) => {return a.name == peer.playerName});
-      this.display(peer.playerName, player);
+      if (!player) {
+        this.display(peer.playerName, player);
+      }
     }
   }
 
@@ -323,6 +329,7 @@ class AncientLoreModel extends LogEventConsumer {
       // TODO Update the victory points. In a 2 player game, the winner in each
       // settlement gets a VP, with more players the first and second players
       // get VPs.
+      console.log("TODO Update the victory points.");
 
       // Tell the board updater to update the locations
       this.board.updateLocations(this.locations);
@@ -352,7 +359,11 @@ class AncientLoreEventGenerator {
   }
 
   startGame(options) {
-    options.players.sort((a, b) => {return strcmp(a.peerId, b.peerId);});
+    let rank = new Map();
+    for (const player of options.players) {
+      rank.set(player.peerId, Math.random());
+    }
+    options.players.sort((a, b) => {return rank.get(a.peerId) - rank.get(b.peerId);});
 
     let startGameEvent = StartAncientLoreEvent.makeNow(
       0, this.eventLog.swarm.myId, options
