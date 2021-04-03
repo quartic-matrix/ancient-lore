@@ -147,20 +147,45 @@ class PlayerList  {
     rootElement.querySelector(".players").innerHTML += playersHtml.trim();
     this.playerListElement = rootElement.querySelector(".player-list");
     this.myPlayerName = myPlayerName;
+    this.peers = [];
   }
 
   reset() {
     this.playerListElement.innerHTML = "";
+    this.peers = [];
   }
 
   onPeerJoins(asPlayerName) {
+    this.peers.push({playerName: asPlayerName});
+
+    this.update(new Array());
+  }
+
+  update(players) {
+    this.playerListElement.innerHTML = "";
+
+    for (const peer of this.peers) {
+      const player = players.find((a) => {return a.name == peer.playerName});
+      this.display(peer.playerName, player);
+    }
+  }
+
+  display(playerName, player) {
     let para = document.createElement("p");
-    if (this.myPlayerName == asPlayerName) {
+    if (this.myPlayerName == playerName) {
       para.style.fontWeight = "bold";
     }
-    let node = document.createTextNode(asPlayerName);
-    para.appendChild(node);
     
+    let nameNode = document.createTextNode(playerName);
+    para.appendChild(nameNode);
+
+    if (player) {
+      let vpNode = document.createTextNode(" : " + player.victoryPoints.toString());
+      para.appendChild(vpNode);
+    } else {
+      para.style.fontStyle = "italic";
+    }
+
     this.playerListElement.appendChild(para);
   }
 }
@@ -210,7 +235,7 @@ class AncientLoreBoardUpdater {
 
 class AncientLoreModel extends LogEventConsumer {
   constructor(boardUpdater, playerList, eventGenerator) {
-    super([PeerJoinEvent, StartAncientLoreEvent]);
+    super([PeerJoinEvent, StartAncientLoreEvent, MoveUnitsEvent]);
     this.board = boardUpdater;
     this.generator = eventGenerator;
     this.playerList = playerList
@@ -218,6 +243,7 @@ class AncientLoreModel extends LogEventConsumer {
     this.locations = []; // Setup in setupBoard.
     this.players = []; // Added to in onStartGame.
     this.isGameStarted = false;
+    this.numPlayersMovedUnits = 0;
   }
 
   reset() {
@@ -246,10 +272,16 @@ class AncientLoreModel extends LogEventConsumer {
       return; // Only react to the first StartGameEvent received.
     }
     this.players = options.players;
+    for (let player of this.players) {
+      player.victoryPoints = 0;
+    }
+    this.playerList.update(this.players);
     this.board.loadBoard(options);
     this.setupBoard(options, units);
-    this.isGameStarted = true;
     this.generator.onStartGame(options);
+    this.isGameStarted = true;
+    this.numPlayersMovedUnits = 0;
+    this.generator.moveUnits(this.locations);
   }
 
   setupBoard(options, units) {
@@ -273,6 +305,29 @@ class AncientLoreModel extends LogEventConsumer {
     // Tell the board updater to update the locations
     this.board.updateLocations(this.locations);
   }
+
+  onMoveUnits(playerId, movements) {
+    // Update units in each location.
+    for (let movement of movements) {
+      movement.numUnits = Math.max(movement.numUnits, 0);
+      movement.numUnits = Math.min(
+        movement.numUnits,
+        this.locations[movement.fromId].players[playerId].numUnits
+      );
+      this.locations[movement.fromId].players[playerId].numUnits -= movement.numUnits;
+      this.locations[movement.toId].players[playerId].numUnits += movement.numUnits;
+    }
+    
+    ++this.numPlayersMovedUnits;
+    if (this.numPlayersMovedUnits == this.players.length) {
+      // TODO Update the victory points. In a 2 player game, the winner in each
+      // settlement gets a VP, with more players the first and second players
+      // get VPs.
+
+      // Tell the board updater to update the locations
+      this.board.updateLocations(this.locations);
+    }
+  }
 }
 
 class AncientLoreEventGenerator {
@@ -283,6 +338,7 @@ class AncientLoreEventGenerator {
     this.myPlayerId = -1; // Set in onStartGame. -1 means observer.
 
     this.eventLog.registerEventType(StartAncientLoreEvent);
+    this.eventLog.registerEventType(MoveUnitsEvent);
 
     this.gameSetup.showGameSetupOptions(this.startGame.bind(this));
   }
@@ -309,26 +365,35 @@ class AncientLoreEventGenerator {
     this.myPlayerId = options.players.findIndex((a) => {
       return a.peerId == this.eventLog.swarm.myId;
     });
-    if (this.myPlayerId >= 0) {
-      this.moveUnits();
-    }
   }
 
-  moveUnits() {
+  moveUnits(locations) {
+    if (this.myPlayerId < 0) {
+      return;
+    }
+    let maxUnitsPerSettlement = [];
+    for (let location of locations) {
+      maxUnitsPerSettlement.push(location.players[this.myPlayerId].numUnits);
+    }
+
     let toSettlementId;
-    let fromSettlements = [];
     this.input.startSelectingASettlement((selectedSettlementId) => {
       toSettlementId = selectedSettlementId;
 
       this.input.startSelectingUnitsToMove(
         toSettlementId, 
+        maxUnitsPerSettlement,
         (numUnitsFromSettlements) => {
+          let movements = [];
           for (let [key, value] of numUnitsFromSettlements) {
-            fromSettlements.push({settlementId: key, numUnits: value});
+            movements.push({fromId: key, toId: toSettlementId, numUnits: value});
           }
           this.input.updateSelectedSettlement(-1);
 
-          console.log('TODO send a MoveUnitsEvent. To: ', toSettlementId);
+          let moveUnitsEvent = MoveUnitsEvent.makeNow(
+            0, this.eventLog.swarm.myId, this.myPlayerId, movements
+          );
+          this.eventLog.add(moveUnitsEvent);
         }
       );
     });
@@ -473,7 +538,7 @@ class AncientLoreInputCollector {
   /**
    * @param {*} sendTo(numUnitsFromSettlements)
    */
-  startSelectingUnitsToMove(toSettlementId, sendTo) {
+  startSelectingUnitsToMove(toSettlementId, maxUnitsPerSettlement, sendTo) {
     let numFromSettlements = new Map();
 
     let toSettlementClass = ".settlement" + toSettlementId;
@@ -499,7 +564,10 @@ class AncientLoreInputCollector {
       }
       let onClickFn = (event) => {
         event.stopPropagation();
-        let numUnits = Math.max(numFromSettlements.get(otherSettlementId) + 2*isInward - 1, 0);
+        let numUnits = Math.max(
+          numFromSettlements.get(otherSettlementId) + 2*isInward - 1, 0
+        );
+        numUnits = Math.min(maxUnitsPerSettlement[otherSettlementId], numUnits);
         numFromSettlements.set(otherSettlementId, numUnits);
         numberElement.children[0].innerHTML = numUnits.toString();
       }
