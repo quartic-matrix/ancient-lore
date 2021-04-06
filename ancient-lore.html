@@ -9,7 +9,7 @@
     <div id="game-0" class="game-area" style="position: relative; display: flex;">
       <div class="players" >
       </div>  
-      <div class="board-area" style="width: 100%;">
+      <div class="board-area" style="position: relative; width: 100%;">
         <div class="input-overlay" style="position: absolute;">
         </div>
         <div class="board" style="width: 100%;">
@@ -33,22 +33,28 @@
 
       function init() {
         let domElements = [document.getElementById("game-0")];
-        for (let index = 1; index < 3; index++) {
-          domElements.push(cloneDomElement(domElements[0], "game-" + index));
-        }
 
         const swarmIds = ["ancient-lore"];
         const channels = ["events"];
 
-        games.push(makeAncientLoreGame(
-          swarmIds[0], channels[0], domElements[0], getPlayerName() + "-0"
-        ));
-        games.push(makeAncientLoreGame(
-          swarmIds[0], channels[0], domElements[1], getPlayerName() + "-1"
-        ));
-        games.push(makeAncientLoreGame(
-          swarmIds[0], channels[0], domElements[2], getPlayerName() + "-2"
-        ));
+        if (typeof fakeServer !== "undefined") {
+          for (let index = 1; index < 3; index++) {
+            domElements.push(cloneDomElement(domElements[0], "game-" + index));
+          }
+          games.push(makeAncientLoreGame(
+            swarmIds[0], channels[0], domElements[0], getPlayerName() + "-0"
+          ));
+          games.push(makeAncientLoreGame(
+            swarmIds[0], channels[0], domElements[1], getPlayerName() + "-1"
+          ));
+          games.push(makeAncientLoreGame(
+            swarmIds[0], channels[0], domElements[2], getPlayerName() + "-2"
+          ));
+        } else {
+          games.push(makeAncientLoreGame(
+            swarmIds[0], channels[0], domElements[0], getPlayerName()
+          ));
+        }
       }
 
       function cloneDomElement(olderSibling, id) {

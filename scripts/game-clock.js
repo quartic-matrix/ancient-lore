@@ -165,6 +165,8 @@ class GameClockBoard extends LogEventConsumer {
     });
   }
 
+  react() {}
+
   onRenameTimer(timerId, newName) {
     var label = this.domElement.querySelector(timerId).querySelector(".button-label");
     label.innerHTML = newName;

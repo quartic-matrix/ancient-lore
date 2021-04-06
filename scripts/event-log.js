@@ -71,26 +71,40 @@ class LogEventConsumerUpdater extends EventLogListener {
    * @param {*} eventConsumer requires:
    *    reset()
    *    consume(LogEvent)
+   *    react()
    */
   constructor(eventConsumer, eventLog) {
     super();
     this.eventConsumer = eventConsumer;
     this.eventLog = eventLog;
     this.eventLog.addListener(this);
+    this.needsFullUpdate = false;
     this.fullUpdate();
   }
 
+  onAddingEvents() {
+    this.needsFullUpdate = false;
+  }
+
   onEventAdded(event, atBack) {
-    if (atBack) {
+    this.needsFullUpdate = this.needsFullUpdate || !atBack;
+    if (!this.needsFullUpdate) {
       this.eventConsumer.consume(event);
-    } else {
+    }
+  }
+
+  onEventsAdded() {
+    if (this.needsFullUpdate) {
       this.fullUpdate();
+    } else {
+      this.eventConsumer.react();
     }
   }
 
   fullUpdate() {
     this.eventConsumer.reset();
     this.eventLog.exportTo(this);
+    this.eventConsumer.react();
   }
 
   onEventExported(event) {
@@ -108,20 +122,7 @@ class EventLog {
     this.listeners.push(listener);
   }
 
-  add(event) {
-    let i = this.findIndexFor(event);
-    if (i === false) {
-      return false;
-    }
-    this.events.splice(i, 0, event);
-    let atBack = i == this.events.length-1;
-    this.listeners.forEach((listener) => {
-      listener.onEventAdded(event, atBack);
-    });
-    return true;
-  }
-
-  addMultiple(events) {
+  add(events) {
     if (events.length == 0) {
       return;
     }
@@ -130,7 +131,7 @@ class EventLog {
       listener.onAddingEvents();
     });
 
-    events.forEach(this.add.bind(this));
+    events.forEach(this.addSingle.bind(this));
 
     this.listeners.forEach((listener) => {
       listener.onEventsAdded();
@@ -199,6 +200,19 @@ class EventLog {
     }
     return 0;
   }
+
+  addSingle(event) {
+    let i = this.findIndexFor(event);
+    if (i === false) {
+      return false;
+    }
+    this.events.splice(i, 0, event);
+    let atBack = i == this.events.length-1;
+    this.listeners.forEach((listener) => {
+      listener.onEventAdded(event, atBack);
+    });
+    return true;
+  }
 }
 
 function flattenObject(obj) {   
@@ -248,11 +262,10 @@ class SyncedEventLog {
 
   /**
    * 
-   * @param {*} event requires:
-   *    To extend or be usable in place of LogEvent.
+   * @param {*} event must extend or be usable in place of LogEvent.
    */
   add(event) {
-    this.log.add(event);
+    this.log.add([event]);
     this.broadcastEvents([event]);
   }
   
@@ -302,7 +315,7 @@ class SyncedEventLog {
     let [onlyInThis, onlyInOther] = this.log.compare(otherEvents);
 
     // Add those that are onlyInOther without broadcasting.
-    this.log.addMultiple(onlyInOther);
+    this.log.add(onlyInOther);
 
     // Broadcast onlyInThis 
     // TODO only if it contains an event this peer generated.

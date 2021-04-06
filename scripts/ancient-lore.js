@@ -132,8 +132,9 @@ class AncientLoreGame extends BasicGame {
     
     this.board = new AncientLoreBoardUpdater(domElement);
     this.playerList = new PlayerList(domElement, playerName);
+    this.conclusionDisplay = new ConclusionDisplay(domElement);
     this.model = new AncientLoreModel(
-      this.board, this.playerList, this.generator
+      this.board, this.playerList, this.conclusionDisplay, this.generator
     );
     this.modelUpdater = new LogEventConsumerUpdater(this.model, eventLog);
 
@@ -240,21 +241,22 @@ class AncientLoreBoardUpdater {
 }
 
 class AncientLoreModel extends LogEventConsumer {
-  constructor(boardUpdater, playerList, eventGenerator) {
+  constructor(boardUpdater, playerList, conclusionDisplay, eventGenerator) {
     super([PeerJoinEvent, StartAncientLoreEvent, MoveUnitsEvent]);
     this.board = boardUpdater;
     this.generator = eventGenerator;
-    this.playerList = playerList
+    this.playerList = playerList;
+    this.concluder = conclusionDisplay;
 
     this.locations = []; // Setup in setupBoard.
     this.players = []; // Added to in onStartGame.
-    this.isGameStarted = false;
+    this.phase = "not-started";
     this.numPlayersMovedUnits = 0;
   }
 
   reset() {
     this.locations = [];
-    this.isGameStarted = false;
+    this.phase = "not-started";
     this.playerList.reset();
     this.generator.reset();
     /** TODO be able to reset the BoardUpdater. Or probably this.board and
@@ -268,13 +270,21 @@ class AncientLoreModel extends LogEventConsumer {
      */
   }
 
+  react() {
+    if (this.phase == "begin-round") {
+      this.beginRound();
+    } else if (this.phase == "finished") {
+      this.concluder.declareWinners(winners);
+    }
+  }
+
   onPeerJoins(asPlayerName, peerId) {
     this.playerList.onPeerJoins(asPlayerName);
     this.generator.onPeerJoins(asPlayerName, peerId);
   }
 
   onStartGame(options, units) {
-    if (this.isGameStarted) {
+    if (this.phase != "not-started") {
       return; // Only react to the first StartGameEvent received.
     }
     this.players = options.players;
@@ -285,9 +295,7 @@ class AncientLoreModel extends LogEventConsumer {
     this.board.loadBoard(options);
     this.setupBoard(options, units);
     this.generator.onStartGame(options);
-    this.isGameStarted = true;
-    this.numPlayersMovedUnits = 0;
-    this.generator.moveUnits(this.locations);
+    this.phase = "begin-round";
   }
 
   setupBoard(options, units) {
@@ -326,13 +334,48 @@ class AncientLoreModel extends LogEventConsumer {
     
     ++this.numPlayersMovedUnits;
     if (this.numPlayersMovedUnits == this.players.length) {
-      // TODO Update the victory points. In a 2 player game, the winner in each
-      // settlement gets a VP, with more players the first and second players
-      // get VPs.
-      console.log("TODO Update the victory points.");
+      this.endRound(); 
+    }
+  }
 
-      // Tell the board updater to update the locations
-      this.board.updateLocations(this.locations);
+  beginRound() {
+    this.numPlayersMovedUnits = 0;
+    this.generator.moveUnits(this.locations);
+  }
+
+  endRound() {
+    // Tell the board updater to update the locations
+    this.board.updateLocations(this.locations);
+
+    for (const location of this.locations) {
+      let numUnits = [];
+      for (const player of location.players) {
+        numUnits.push(player.numUnits);
+      }
+      numUnits.sort();
+      const median = numUnits[Math.floor(numUnits.length/2)];
+      for (let playerId = 0; playerId < location.players.length; playerId++) {
+        if (location.players[playerId].numUnits >= median) {
+          ++this.players[playerId].victoryPoints;
+        }
+      } 
+    }
+    this.playerList.update(this.players);
+    
+    let maxVps = 0;
+    for (const player of this.players) {
+      maxVps = Math.max(maxVps, player.victoryPoints);
+    }
+    let winners = [];
+    for (const player of this.players) {
+      if (player.victoryPoints >= 10 && player.victoryPoints >= maxVps) {
+        winners.push(player.name);
+      }
+    }
+    if (winners.length > 0) {
+      this.phase = "finished";
+    } else {
+      this.phase = "begin-round";
     }
   }
 }
@@ -606,8 +649,6 @@ class AncientLoreInputCollector {
       handler.element.removeEventListener("click", handler.function);
     });
   }
-
-
 }
 
 class Countdown {
@@ -640,4 +681,36 @@ class Countdown {
       this.onFinishFn();
     }
   }
+}
+
+class ConclusionDisplay {
+  constructor(rootElement) {
+    this.rootElement = rootElement;
+
+  }
+
+  declareWinners(winners) {
+    let overlay = this.rootElement.querySelector(".input-overlay");
+    overlay.style.width = "100%";
+    overlay.style.height = "100%";
+
+    let winnersTitle = document.createElement("h1");
+    winnersTitle.style.textAlign = "center";
+    if (winners.length > 1) {
+      winnersTitle.innerHTML = "Winners";
+    } else {
+      winnersTitle.innerHTML = "Winner";
+    }
+    overlay.appendChild(winnersTitle);
+    
+    for (const winner of winners) {
+      let winnerDisplay = document.createElement("h2");
+      winnerDisplay.style.textAlign = "center";
+      winnerDisplay.innerHTML = winner;
+      overlay.appendChild(winnerDisplay);
+    }
+
+    overlay.style.backgroundColor = "rgba(255, 255, 255, 0.8)";
+  }
+
 }
