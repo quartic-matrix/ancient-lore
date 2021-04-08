@@ -105,6 +105,48 @@ class MoveUnitsEvent extends LogEvent {
   }
 }
 
+class AncientLorePhase {
+  constructor() {
+    this.overall = "";
+    this.roundI = -1;
+  }
+
+  copyFrom(other) {
+    this.overall = other.overall;
+    this.roundI = other.roundI;
+  }
+
+  isEqual(other) {
+    return this.overall == other.overall && this.roundI == other.roundI;
+  }
+
+  isForming() {
+    return this.overall == "forming";
+  }
+
+  isPlaying() {
+    return this.overall == "playing";
+  }
+
+  isFinished() {
+    return this.overall == "finished";
+  }
+
+  reset() {
+    this.overall = "forming";
+    this.roundI = -1;
+  }
+
+  beginRound() {
+    this.overall = "playing";
+    ++this.roundI;
+  }
+
+  finish() {
+    this.overall = "finished";
+  }
+}
+
 class AncientLoreGame extends BasicGame {
   constructor (eventLog, domElement, playerName) {
     super(eventLog);
@@ -124,23 +166,64 @@ class AncientLoreGame extends BasicGame {
      * determine the playerId.
      */
     
+    // User input
     this.gameSetup = new AncientLoreGameSetup(domElement);
     this.inputCollector =  new AncientLoreInputCollector(domElement);
     this.generator = new AncientLoreEventGenerator(
       eventLog, this.gameSetup, this.inputCollector
     );
     
+    // Display
     this.board = new AncientLoreBoardUpdater(domElement);
     this.playerList = new PlayerList(domElement, playerName);
     this.conclusionDisplay = new ConclusionDisplay(domElement);
-    this.model = new AncientLoreModel(
-      this.board, this.playerList, this.conclusionDisplay, this.generator
-    );
+
+    // Internal model
+    this.model = new AncientLoreModel();
     this.modelUpdater = new LogEventConsumerUpdater(this.model, eventLog);
 
+    this.phase = new AncientLorePhase();
+
+    this.model.addListener(this);
+
+    // Kick things off by joining.
     this.join(playerName);
     this.eventLog.broadcastAllEvents();
   }
+
+  onModelUpdated() {
+    const m = this.model;
+    this.playerList.update(m.peers, m.players);
+    this.gameSetup.updateGameSetupOptions(m.peers);
+
+    if (this.phase.isEqual(m.phase)) {
+      return;
+    }
+
+    // If this was previously forming, then some setup is needed.
+    if (this.phase.isForming()) {
+      this.board.loadBoard(m.options);
+      this.generator.onStartGame(m.players);
+    }
+
+    if (m.phase.isForming()) {
+      this.generator.offerToStartGame();
+
+    } else if (m.phase.isPlaying()) {
+      // Either the game was forming and is now playing, or this was already 
+      // playing and the round must be different.
+      this.board.updateLocations(m.locations);
+      this.generator.offerToMoveUnits(m.locations);
+
+    } else if (m.phase.isFinished()) {
+      this.board.updateLocations(m.locations);
+      this.conclusionDisplay.declareWinners(m.winners);
+    }
+
+    // Finally update the game phase.
+    this.phase.copyFrom(m.phase);
+  }
+  
 }
 
 class PlayerList  { 
@@ -151,25 +234,14 @@ class PlayerList  {
     this.peers = [];
   }
 
-  reset() {
-    this.playerListElement.innerHTML = "";
-    this.peers = [];
-  }
-
-  onPeerJoins(asPlayerName) {
-    this.peers.push({playerName: asPlayerName});
-
-    this.update(new Array());
-  }
-
-  update(players) {
+  update(peers, players) {
     this.playerListElement.innerHTML = "";
 
     for (const player of players) {
       this.display(player.name, player);
     }
 
-    for (const peer of this.peers) {
+    for (const peer of peers) {
       const player = players.find((a) => {return a.name == peer.playerName});
       if (!player) {
         this.display(peer.playerName, player);
@@ -241,64 +313,52 @@ class AncientLoreBoardUpdater {
 }
 
 class AncientLoreModel extends LogEventConsumer {
-  constructor(boardUpdater, playerList, conclusionDisplay, eventGenerator) {
+  constructor() {
     super([PeerJoinEvent, StartAncientLoreEvent, MoveUnitsEvent]);
-    this.board = boardUpdater;
-    this.generator = eventGenerator;
-    this.playerList = playerList;
-    this.concluder = conclusionDisplay;
+    this.phase = new AncientLorePhase();
+    this.listeners = [];
 
-    this.locations = []; // Setup in setupBoard.
-    this.players = []; // Added to in onStartGame.
-    this.phase = "not-started";
-    this.numPlayersMovedUnits = 0;
+    this.reset(); // Also declares some member variables.
+  }
+  
+  addListener(listener) {
+    this.listeners.push(listener);
   }
 
   reset() {
-    this.locations = [];
-    this.phase = "not-started";
-    this.playerList.reset();
-    this.generator.reset();
-    /** TODO be able to reset the BoardUpdater. Or probably this.board and
-     * this.generator shouldn't need to be reset, instead they should be
-     * fully updated when the export ends.
-     * 
-     * When reseting and applying all the events (maybe also when applying
-     * a batch of events), then could take a clone of the board element,
-     * make the changes to that, and then replace the displayed board 
-     * element, or even recreate the board element from scratch.
-     */
+    this.options = undefined;
+    this.peers = [];
+    this.players = []; // Added to in onStartGame.
+    this.winners = []; // Added to in endRound.
+    this.locations = []; // Setup in setupBoard.
+    this.phase.reset();
+    this.numPlayersMovedUnits = 0;
   }
 
   react() {
-    if (this.phase == "begin-round") {
-      this.beginRound();
-    } else if (this.phase == "finished") {
-      this.concluder.declareWinners(winners);
+    for (const listener of this.listeners) {
+      listener.onModelUpdated();
     }
   }
 
   onPeerJoins(asPlayerName, peerId) {
-    this.playerList.onPeerJoins(asPlayerName);
-    this.generator.onPeerJoins(asPlayerName, peerId);
+    this.peers.push({playerName: asPlayerName, id: peerId});
   }
 
   onStartGame(options, units) {
-    if (this.phase != "not-started") {
+    if (!this.phase.isForming()) {
       return; // Only react to the first StartGameEvent received.
     }
+    this.options = options;
     this.players = options.players;
     for (let player of this.players) {
       player.victoryPoints = 0;
     }
-    this.playerList.update(this.players);
-    this.board.loadBoard(options);
-    this.setupBoard(options, units);
-    this.generator.onStartGame(options);
-    this.phase = "begin-round";
+    this.setupLocations(options, units);
+    this.beginRound();
   }
 
-  setupBoard(options, units) {
+  setupLocations(options, units) {
     // Create the correct number of locations.
     for (let i = 0; i < options.numLocations; i++) {
       this.locations.push({players: []});
@@ -315,9 +375,11 @@ class AncientLoreModel extends LogEventConsumer {
     units.forEach(unit => {
       ++this.locations[unit.locationId].players[unit.playerId].numUnits;
     });
+  }
 
-    // Tell the board updater to update the locations
-    this.board.updateLocations(this.locations);
+  beginRound() {
+    this.numPlayersMovedUnits = 0;
+    this.phase.beginRound()
   }
 
   onMoveUnits(playerId, movements) {
@@ -338,15 +400,7 @@ class AncientLoreModel extends LogEventConsumer {
     }
   }
 
-  beginRound() {
-    this.numPlayersMovedUnits = 0;
-    this.generator.moveUnits(this.locations);
-  }
-
   endRound() {
-    // Tell the board updater to update the locations
-    this.board.updateLocations(this.locations);
-
     for (const location of this.locations) {
       let numUnits = [];
       for (const player of location.players) {
@@ -360,22 +414,20 @@ class AncientLoreModel extends LogEventConsumer {
         }
       } 
     }
-    this.playerList.update(this.players);
     
     let maxVps = 0;
     for (const player of this.players) {
       maxVps = Math.max(maxVps, player.victoryPoints);
     }
-    let winners = [];
     for (const player of this.players) {
       if (player.victoryPoints >= 10 && player.victoryPoints >= maxVps) {
-        winners.push(player.name);
+        this.winners.push(player.name);
       }
     }
-    if (winners.length > 0) {
-      this.phase = "finished";
+    if (this.winners.length > 0) {
+      this.phase.finish();
     } else {
-      this.phase = "begin-round";
+      this.beginRound();
     }
   }
 }
@@ -389,16 +441,10 @@ class AncientLoreEventGenerator {
 
     this.eventLog.registerEventType(StartAncientLoreEvent);
     this.eventLog.registerEventType(MoveUnitsEvent);
+  }
 
+  offerToStartGame() {
     this.gameSetup.showGameSetupOptions(this.startGame.bind(this));
-  }
-
-  reset() {
-    this.gameSetup.reset();
-  }
-
-  onPeerJoins(asPlayerName, peerId) {
-    this.gameSetup.onPeerJoins(asPlayerName, peerId);
   }
 
   startGame(options) {
@@ -406,7 +452,9 @@ class AncientLoreEventGenerator {
     for (const player of options.players) {
       rank.set(player.peerId, Math.random());
     }
-    options.players.sort((a, b) => {return rank.get(a.peerId) - rank.get(b.peerId);});
+    options.players.sort((a, b) => {
+      return rank.get(a.peerId) - rank.get(b.peerId);
+    });
 
     let startGameEvent = StartAncientLoreEvent.makeNow(
       0, this.eventLog.swarm.myId, options
@@ -414,14 +462,14 @@ class AncientLoreEventGenerator {
     this.eventLog.add(startGameEvent);
   }
 
-  onStartGame(options) {
+  onStartGame(players) {
     this.gameSetup.hideGameSetupOptions();
-    this.myPlayerId = options.players.findIndex((a) => {
+    this.myPlayerId = players.findIndex((a) => {
       return a.peerId == this.eventLog.swarm.myId;
     });
   }
 
-  moveUnits(locations) {
+  offerToMoveUnits(locations) {
     if (this.myPlayerId < 0) {
       return;
     }
@@ -438,20 +486,24 @@ class AncientLoreEventGenerator {
         toSettlementId, 
         maxUnitsPerSettlement,
         (numUnitsFromSettlements) => {
-          let movements = [];
-          for (let [key, value] of numUnitsFromSettlements) {
-            movements.push({fromId: key, toId: toSettlementId, numUnits: value});
-          }
-          this.input.updateSelectedSettlement(-1);
-
-          let moveUnitsEvent = MoveUnitsEvent.makeNow(
-            0, this.eventLog.swarm.myId, this.myPlayerId, movements
-          );
-          this.eventLog.add(moveUnitsEvent);
+          this.moveUnits(toSettlementId, numUnitsFromSettlements)
         }
       );
     });
   }
+
+  moveUnits(toSettlementId, numUnitsFromSettlements) {
+    let movements = [];
+    for (let [key, value] of numUnitsFromSettlements) {
+      movements.push({fromId: key, toId: toSettlementId, numUnits: value});
+    }
+
+    let moveUnitsEvent = MoveUnitsEvent.makeNow(
+      0, this.eventLog.swarm.myId, this.myPlayerId, movements
+    );
+    this.eventLog.add(moveUnitsEvent);
+  }
+
 }
 
 class AncientLoreGameSetup {
@@ -459,10 +511,6 @@ class AncientLoreGameSetup {
     this.overlay = rootElement.querySelector(".input-overlay");
     this.playerSelection = document.createElement("div");
     this.playerSelection.className = "player-selection";
-  }
-
-  reset() {
-    this.playerSelection.innerHTML = "";
   }
 
   /**
@@ -508,7 +556,14 @@ class AncientLoreGameSetup {
     this.overlay.appendChild(this.startGameDiv);
   }
 
-  onPeerJoins(asPlayerName, peerId) {
+  updateGameSetupOptions(peers) {
+    this.playerSelection.innerHTML = "";
+    for (const peer of peers) {
+      this.addPlayerCheckbox(peer.playerName, peer.id);
+    }
+  }
+
+  addPlayerCheckbox(asPlayerName, peerId) {
     let playerCheckbox = document.createElement("input");
     playerCheckbox.setAttribute("type" , "checkbox");
     playerCheckbox.className = "player-selected";
@@ -533,26 +588,62 @@ class AncientLoreInputCollector {
   constructor(rootElement) {
     this.overlay = rootElement.querySelector(".input-overlay");
     this.board = rootElement.querySelector(".board");
-    this.startGameDiv;
+    this.settlementSelection = new SettlementSelection(this.overlay, this.board);
+    this.unitsToMoveSelection = new UnitsToMoveSelection(this.overlay, this.board);
+  }
+  
+  reset() {
+    this.cancelOngoingSelection();
+    this.settlementSelection.updateSelectedSettlement(-1); 
+  }
+
+  startSelectingASettlement(sendTo) {
+    this.cancelOngoingSelection();
+
+    this.settlementSelection.start(sendTo);
+  }
+
+  startSelectingUnitsToMove(toSettlementId, maxUnitsPerSettlement, sendTo) {
+    this.cancelOngoingSelection();
+
+    let onFinishFn = (numFromSettlements) => { 
+      this.settlementSelection.updateSelectedSettlement(-1); 
+      sendTo(numFromSettlements);
+    };
+    this.unitsToMoveSelection.start(
+      toSettlementId, maxUnitsPerSettlement, onFinishFn
+    );
+  }
+
+  cancelOngoingSelection() {
+    this.settlementSelection.cancel();
+    this.unitsToMoveSelection.cancel();
+  }
+}
+
+class SettlementSelection {
+  constructor(overlay, board) {
+    this.overlay = overlay;
+    this.board = board;
     this.countdown;
+    this.clickHandlers = [];
   }
 
   /**
    * @param {*} sendTo(selectedSettlementId)
    */
-  startSelectingASettlement(sendTo) {
+  start(sendTo) {
     let selectedId;
 
-    let numSettlements = this.board.querySelectorAll(".settlement").length; 
-    let settlementSelectionHandlers = [];
+    let numSettlements = this.board.querySelectorAll(".settlement").length;
     for (let i = 0; i < numSettlements; i++) {
-      settlementSelectionHandlers.push((event) => {
+      this.clickHandlers.push((event) => {
         event.stopPropagation();
         this.updateSelectedSettlement(i);
         selectedId = i;
       });
       let settlement = this.board.querySelector(".settlement" + i + ".settlement");
-      settlement.addEventListener("click", settlementSelectionHandlers[i]);
+      settlement.addEventListener("click", this.clickHandlers[i]);
     }
 
     // Make a random selection so there is something selected when the timer
@@ -562,21 +653,24 @@ class AncientLoreInputCollector {
 
     this.countdown = new Countdown(5000, 101, this.overlay);
     let onFinishFn = () => { 
-      this.finishSelectingASettlement(selectedId, settlementSelectionHandlers); 
+      this.finish(selectedId); 
       sendTo(selectedId);
     };
     this.countdown.start(onFinishFn);
   }
-
-  finishSelectingASettlement(selectedId, settlementSelectionHandlers) {
-    this.updateSelectedSettlement(selectedId, "#ff0000");
-
-    for (let i = 0; i < settlementSelectionHandlers.length; i++) {
-      let settlement = this.board.querySelector(".settlement" + i + ".settlement");
-      settlement.removeEventListener("click", settlementSelectionHandlers[i]);
+  
+  cancel() {
+    if (this.countdown) {
+      this.countdown.cancel();
+      this.removeClickHandlers();
     }
   }
-  
+
+  finish(selectedId) {
+    this.updateSelectedSettlement(selectedId, "#ff0000");
+    this.removeClickHandlers();
+  }
+
   updateSelectedSettlement(i, selectedStroke = "#ffcc00") {
     let highlights = this.board.querySelectorAll(".highlight"); 
     highlights.forEach(highlight => {
@@ -589,21 +683,38 @@ class AncientLoreInputCollector {
     });
   }
 
+  removeClickHandlers() {
+    for (let i = 0; i < this.clickHandlers.length; i++) {
+      let settlement = this.board.querySelector(".settlement" + i + ".settlement");
+      settlement.removeEventListener("click", this.clickHandlers[i]);
+    }
+    this.clickHandlers = [];
+  }
+}
+
+class UnitsToMoveSelection {
+  constructor(overlay, board) {
+    this.overlay = overlay;
+    this.board = board;
+    this.countdown; 
+    this.clickHandlers = [];
+    this.moveElements = [];
+  }
+
   /**
    * @param {*} sendTo(numUnitsFromSettlements)
    */
-  startSelectingUnitsToMove(toSettlementId, maxUnitsPerSettlement, sendTo) {
+  start(toSettlementId, maxUnitsPerSettlement, sendTo) {
     let numFromSettlements = new Map();
 
     let toSettlementClass = ".settlement" + toSettlementId;
 
-    let moveElements = this.board.querySelectorAll(".move" + toSettlementClass); 
-    moveElements.forEach((element) => {
+    this.moveElements = this.board.querySelectorAll(".move" + toSettlementClass); 
+    this.moveElements.forEach((element) => {
       element.style.visibility = "visible";
     });
 
-    let arrows = this.board.querySelectorAll(".arrow" + toSettlementClass); 
-    let arrowClickHandlers = [];
+    let arrows = this.board.querySelectorAll(".arrow" + toSettlementClass);
     arrows.forEach((arrow) => {
       let arrowToSettlement = parseInt(arrow.getAttribute("tosettlement"));
       let arrowFromSettlement = parseInt(arrow.getAttribute("fromsettlement"));
@@ -625,29 +736,38 @@ class AncientLoreInputCollector {
         numFromSettlements.set(otherSettlementId, numUnits);
         numberElement.children[0].innerHTML = numUnits.toString();
       }
-      arrowClickHandlers.push({
-        element: arrow,
-        function: onClickFn
-      });
+      this.clickHandlers.push({ element: arrow, function: onClickFn });
       arrow.addEventListener("click", onClickFn);
     });
 
     this.countdown = new Countdown(10000, 101, this.overlay);
     let onFinishFn = () => { 
-      this.finishSelectingUnitsToMove(moveElements, arrowClickHandlers); 
+      this.finish(); 
       sendTo(numFromSettlements);
     };
     this.countdown.start(onFinishFn);
   }
+  
+  cancel() {
+    if (this.countdown) {
+      this.countdown.cancel();
+      this.finish();
+    }
+  }
 
-  finishSelectingUnitsToMove(moveElements, arrowClickHandlers) {
-    moveElements.forEach((element) => {
+  finish() {
+    this.moveElements.forEach((element) => {
       element.style.visibility = "hidden";
     });
 
-    arrowClickHandlers.forEach((handler) => {
+    this.removeClickHandlers();
+  }
+
+  removeClickHandlers() {
+    this.clickHandlers.forEach((handler) => {
       handler.element.removeEventListener("click", handler.function);
     });
+    this.clickHandlers = [];
   }
 }
 
@@ -655,6 +775,7 @@ class Countdown {
   constructor(
     timeRemainingInMs, frequencyInMs, domElement
   ) {
+    this.intervalId;
     this.onFinishFn;
     this.timeRemainingInMs = timeRemainingInMs;
     this.frequencyInMs = frequencyInMs;
@@ -676,9 +797,16 @@ class Countdown {
     this.display.innerHTML = formatTime(this.timeRemainingInMs);
     this.timeRemainingInMs -= this.frequencyInMs;
     if (this.timeRemainingInMs <= 0) {
+      this.cancel();
+      this.onFinishFn();
+    }
+  }
+
+  cancel() {
+    if (this.intervalId !== undefined) {
       clearInterval(this.intervalId);
       this.display.remove();
-      this.onFinishFn();
+      this.intervalId = undefined;
     }
   }
 }
