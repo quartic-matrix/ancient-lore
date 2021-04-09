@@ -11,11 +11,10 @@
 }
 
 .board {
-  width: 100%;
-  flex-grow: 1;
+  height: 80%;
 }
 
-.cards {
+.cards-area {
   position: relative;
   height: 20%;
   display: flex;

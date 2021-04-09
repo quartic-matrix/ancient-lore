@@ -269,10 +269,14 @@ class AncientLoreGame extends BasicGame {
       return;
     }
 
-    // If this was previously forming, then some setup is needed.
     if (this.phase.isForming()) {
+      // This was previously forming, so some setup is needed.
       this.board.loadBoard(m.options);
       this.generator.onStartGame(m.players);
+      
+    } else if (this.phase.isSelectingActions()) {
+      // This was previously selecting an action, that needs to stop.
+      console.log('TODO finish action selection');
     }
 
     if (m.phase.isForming()) {
@@ -280,9 +284,14 @@ class AncientLoreGame extends BasicGame {
 
     } else if (m.phase.isPlaying()) {
       // Either the game was forming and is now playing, or this was already 
-      // playing and the round must be different.
+      // playing and the round, round phase or turn must be different.
       this.board.updateLocations(m.locations);
-      this.generator.offerToMoveUnits(m.locations);
+
+      if (m.phase.isSelectingActions()) {
+        this.generator.askForActionSelection();
+      }
+
+      // this.generator.offerToMoveUnits(m.locations);
 
     } else if (m.phase.isFinished()) {
       this.board.updateLocations(m.locations);
@@ -538,6 +547,21 @@ class AncientLoreEventGenerator {
     });
   }
 
+  askForActionSelection() {
+    let onTimeHasRunOutFn = () => {
+      // TODO Send a TimeHasRunOut event.
+      // TODO Once a time has run out event has been receive from all the 
+      //      players, offer the option to continue regardless of whether 
+      //      others are ready.
+    };
+    
+    console.log(
+      `TODO consider whether to send an event whenever the
+      selection changes, or only when action selection is over.`
+    );
+    this.input.startSelectingAnAction(onTimeHasRunOutFn);
+  }
+
   offerToMoveUnits(locations) {
     if (this.myPlayerId < 0) {
       return;
@@ -657,26 +681,41 @@ class AncientLoreInputCollector {
   constructor(rootElement) {
     this.overlay = rootElement.querySelector(".input-overlay");
     this.board = rootElement.querySelector(".board");
-    this.settlementSelection = new SettlementSelection(this.overlay, this.board);
+    this.cardsArea = rootElement.querySelector(".cards-area");
+    this.actionSelection = new ActionSelection(this.cardsArea);
+    this.settlementSelection = new SettlementSelection(this.board);
     this.unitsToMoveSelection = new UnitsToMoveSelection(this.overlay, this.board);
-  }
-  
-  reset() {
-    this.cancelOngoingSelection();
-    this.settlementSelection.updateSelectedSettlement(-1); 
+    this.countdown;
   }
 
-  startSelectingASettlement(sendTo) {
+  startSelectingAnAction(onTimeHasRunOutFn) {
     this.cancelOngoingSelection();
 
-    this.settlementSelection.start(sendTo);
+    this.actionSelection.start();
+    this.settlementSelection.start();
+    
+    this.countdown = new Countdown(5000, 101, this.overlay);
+    let onFinishFn = () => { 
+      onTimeHasRunOutFn();
+    };
+    this.countdown.start(onFinishFn);
+  }
+
+  finishSelectingAnAction() {
+    let selection = {
+      action: this.actionSelection.selectedAction,
+      settlementId: this.settlementSelection.selectedId
+    };
+
+    this.cancelOngoingSelection();
+    return selection;
   }
 
   startSelectingUnitsToMove(toSettlementId, maxUnitsPerSettlement, sendTo) {
     this.cancelOngoingSelection();
 
     let onFinishFn = (numFromSettlements) => { 
-      this.settlementSelection.updateSelectedSettlement(-1); 
+      this.settlementSelection.updateHighlight(-1); 
       sendTo(numFromSettlements);
     };
     this.unitsToMoveSelection.start(
@@ -685,65 +724,99 @@ class AncientLoreInputCollector {
   }
 
   cancelOngoingSelection() {
+    this.actionSelection.cancel();
     this.settlementSelection.cancel();
     this.unitsToMoveSelection.cancel();
+    
+    if (this.countdown) {
+      this.countdown.cancel();
+    }
+  }
+}
+
+class ActionSelection {
+  constructor(cardsArea) {
+    this.cardsArea = cardsArea;
+    this.initCardElements();
+    this.selectedAction;
+  }
+
+  initCardElements() {
+    this.cards = [];
+    this.initCardElement("move", moveCardHtml.trim());
+  }
+
+  initCardElement(gameAction, html) {
+    let card = document.createElement("div");
+    card.addEventListener("click", () => {
+      card.querySelector("#rect1440").style.stroke = "#ff0000"; // TODO use a class, unhighlight other cards.
+      this.selectedAction = gameAction;
+    });
+    card.className = "action card";
+    card.innerHTML = html;
+    card.style.display = "none";
+    card.style.position = "relative";
+    card.style.flexBasis = "10%";
+    this.cards.push(card);
+    this.cardsArea.appendChild(card);
+  }
+
+  start() {
+    this.selectedAction = undefined;
+
+    for (let card of this.cards) {
+      card.style.display = "block";
+    }
+  }
+
+  cancel() {
+    for (let card of this.cards) {
+      card.style.display = "none";
+    }
+  }
+
+  finish() {
+    this.cancel();
   }
 }
 
 class SettlementSelection {
-  constructor(overlay, board) {
-    this.overlay = overlay;
+  constructor(board) {
     this.board = board;
-    this.countdown;
     this.clickHandlers = [];
+    this.selectedId;
   }
 
-  /**
-   * @param {*} sendTo(selectedSettlementId)
-   */
-  start(sendTo) {
-    let selectedId;
+  start() {
+    this.selectedId = -1;
 
     let numSettlements = this.board.querySelectorAll(".settlement").length;
     for (let i = 0; i < numSettlements; i++) {
       this.clickHandlers.push((event) => {
         event.stopPropagation();
-        this.updateSelectedSettlement(i);
-        selectedId = i;
+        this.selectedId = i;
+        this.updateHighlight();
       });
       let settlement = this.board.querySelector(".settlement" + i + ".settlement");
       settlement.addEventListener("click", this.clickHandlers[i]);
     }
-
-    // Make a random selection so there is something selected when the timer
-    // runs out. TODO handle non-selection more gracefully.
-    selectedId = Math.floor(Math.random() * numSettlements);
-    this.updateSelectedSettlement(selectedId);
-
-    this.countdown = new Countdown(5000, 101, this.overlay);
-    let onFinishFn = () => { 
-      this.finish(selectedId); 
-      sendTo(selectedId);
-    };
-    this.countdown.start(onFinishFn);
+    
+    this.updateHighlight();
   }
   
   cancel() {
-    if (this.countdown) {
-      this.countdown.cancel();
-      this.removeClickHandlers();
-    }
-  }
-
-  finish(selectedId) {
-    this.updateSelectedSettlement(selectedId, "#ff0000");
     this.removeClickHandlers();
   }
 
-  updateSelectedSettlement(i, selectedStroke = "#ffcc00") {
+  finish() {
+    this.removeClickHandlers();
+    this.updateHighlight("#ff0000");
+  }
+
+  updateHighlight(selectedStroke = "#ffcc00") {
     let highlights = this.board.querySelectorAll(".highlight"); 
     highlights.forEach(highlight => {
-      if (highlight.matches(".settlement" + i)) {
+      if (highlight.matches(".settlement" + this.selectedId)) {
         highlight.style.visibility = "visible";
         highlight.style.stroke = selectedStroke;
       } else {
