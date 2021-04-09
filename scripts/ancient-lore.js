@@ -70,6 +70,42 @@ class StartAncientLoreEvent extends LogEvent {
   }
 }
 
+class ActionSelectedEvent extends LogEvent {
+  
+  static type() {
+    return "ancient-lore-action-selected";
+  }
+
+  static makeFromData(objectFromData) {
+    return new ActionSelectedEvent(
+      objectFromData.timestamp, 
+      objectFromData.peerId, 
+      objectFromData.playerId, 
+      objectFromData.action,
+      objectFromData.locationId
+    );
+  }
+
+  static makeNow(timestampOffset, peerId, playerId, action, locationId) {
+    return new ActionSelectedEvent(
+      LogEvent.makeTimestamp(timestampOffset),
+      peerId,
+      playerId, action, locationId
+    );
+  }
+
+  constructor(timestamp, peerId, playerId, action, locationId) {
+    super(timestamp, peerId, ActionSelectedEvent.type());
+    this.playerId = playerId;
+    this.action = action;
+    this.locationId = locationId;
+  }
+
+  notify(eventListener) {
+    eventListener.onMoveUnits(this.playerId, this.movements);
+  }
+}
+
 class MoveUnitsEvent extends LogEvent {
   
   static type() {
@@ -78,9 +114,9 @@ class MoveUnitsEvent extends LogEvent {
 
   static makeFromData(objectFromData) {
     return new MoveUnitsEvent(
-      objectFromData.timestamp,
-      objectFromData.peerId,
-      objectFromData.playerId,
+      objectFromData.timestamp, 
+      objectFromData.peerId, 
+      objectFromData.playerId, 
       objectFromData.movements
     );
   }
@@ -107,43 +143,76 @@ class MoveUnitsEvent extends LogEvent {
 
 class AncientLorePhase {
   constructor() {
-    this.overall = "";
+    this.gamePhase = "";
     this.roundI = -1;
+    this.roundPhase = "";
+    this.turnPlayerId = -1;
+    // Remember to update copyFrom and isEqual.
   }
 
   copyFrom(other) {
-    this.overall = other.overall;
+    this.gamePhase = other.gamePhase;
     this.roundI = other.roundI;
+    this.roundPhase = other.roundPhase;
+    this.turnPlayerId = other.turnPlayerId;
   }
 
   isEqual(other) {
-    return this.overall == other.overall && this.roundI == other.roundI;
+    return (
+      this.gamePhase == other.gamePhase && 
+      this.roundI == other.roundI &&
+      this.roundPhase == other.roundPhase &&
+      this.turnPlayerId == other.turnPlayerId
+    );
   }
 
   isForming() {
-    return this.overall == "forming";
+    return this.gamePhase == "forming";
   }
 
   isPlaying() {
-    return this.overall == "playing";
+    return this.gamePhase == "playing";
+  }
+
+  isSelectingActions() {
+    return (
+      this.isPlaying() && 
+      this.roundI >= 0 && 
+      this.roundPhase == "selecting-actions"
+    );
+  }
+
+  isExecutingActions() {
+    return (
+      this.isPlaying() && 
+      this.roundI >= 0 && 
+      this.roundPhase == "executing-actions"
+    );
   }
 
   isFinished() {
-    return this.overall == "finished";
+    return this.gamePhase == "finished";
   }
 
   reset() {
-    this.overall = "forming";
+    this.gamePhase = "forming";
     this.roundI = -1;
   }
 
   beginRound() {
-    this.overall = "playing";
+    this.gamePhase = "playing";
     ++this.roundI;
+    this.roundPhase = "selecting-actions";
+    this.turnPlayerId = -1;
+  }
+
+  beginTurn() {
+    this.roundPhase = "executing-actions";
+    ++this.turnPlayerId;
   }
 
   finish() {
-    this.overall = "finished";
+    this.gamePhase = "finished";
   }
 }
 
