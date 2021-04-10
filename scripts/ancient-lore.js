@@ -743,13 +743,24 @@ class ActionSelection {
 
   initCardElements() {
     this.cards = [];
+    this.initCardElement("regroup", regroupCardHtml.trim());
+    this.initCardElement("proclaim", proclaimCardHtml.trim());
+    this.initCardElement("contest", contestCardHtml.trim());
     this.initCardElement("move", moveCardHtml.trim());
+    this.initCardElement("invade", invadeCardHtml.trim());
   }
 
   initCardElement(gameAction, html) {
     let card = document.createElement("div");
     card.addEventListener("click", () => {
-      card.querySelector("#rect1440").style.stroke = "#ff0000"; // TODO use a class, unhighlight other cards.
+      for (let c of this.cards) {
+        c.querySelector(".border").style.stroke = "#6d0000"; 
+        c.style.paddingTop = "1%";
+        c.style.paddingBottom = "0%";
+      }
+      card.querySelector(".border").style.stroke = "#ff0000";
+      card.style.paddingTop = "0%";
+      card.style.paddingBottom = "1%";
       this.selectedAction = gameAction;
     });
     card.className = "action card";
