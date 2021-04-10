@@ -14,9 +14,17 @@
   height: 80%;
 }
 
-.cards-area {
+.footer {
   position: relative;
   height: 20%;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+}
+
+.cards-area {
+  position: relative;
+  flex-grow: 1;
   display: flex;
   flex-direction: row;
   justify-content: center;

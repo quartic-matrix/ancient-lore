@@ -694,7 +694,7 @@ class AncientLoreInputCollector {
     this.actionSelection.start();
     this.settlementSelection.start();
     
-    this.countdown = new Countdown(5000, 101, this.overlay);
+    this.countdown = new Countdown(30000, 101, this.overlay);
     let onFinishFn = () => { 
       onTimeHasRunOutFn();
     };
