@@ -37,3 +37,14 @@
   padding-left: 0.5%;
   padding-right: 0.5%;
 }
+
+.flow-control-area {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.button {
+  font-size: "large";
+  color: "#3377aa";
+}

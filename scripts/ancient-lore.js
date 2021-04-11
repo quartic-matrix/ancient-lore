@@ -70,6 +70,38 @@ class StartAncientLoreEvent extends LogEvent {
   }
 }
 
+class ContinueEvent extends LogEvent {
+  
+  static type() {
+    return "ancient-lore-continue";
+  }
+
+  static makeFromData(objectFromData) {
+    return new ContinueEvent(
+      objectFromData.timestamp, 
+      objectFromData.peerId, 
+      objectFromData.playerId
+    );
+  }
+
+  static makeNow(timestampOffset, peerId, playerId) {
+    return new ContinueEvent(
+      LogEvent.makeTimestamp(timestampOffset),
+      peerId,
+      playerId
+    );
+  }
+
+  constructor(timestamp, peerId, playerId) {
+    super(timestamp, peerId, ContinueEvent.type());
+    this.playerId = playerId;
+  }
+
+  notify(eventListener) {
+    eventListener.onContinue(this.playerId);
+  }
+}
+
 class ActionSelectedEvent extends LogEvent {
   
   static type() {
@@ -102,7 +134,7 @@ class ActionSelectedEvent extends LogEvent {
   }
 
   notify(eventListener) {
-    eventListener.onMoveUnits(this.playerId, this.movements);
+    eventListener.onActionSelected(this.playerId, this.action, this.locationId);
   }
 }
 
@@ -146,7 +178,8 @@ class AncientLorePhase {
     this.gamePhase = "";
     this.roundI = -1;
     this.roundPhase = "";
-    this.turnPlayerId = -1;
+    this.turnPlayerI = -1;
+    this.inExtraTime = false;
     // Remember to update copyFrom and isEqual.
   }
 
@@ -154,7 +187,8 @@ class AncientLorePhase {
     this.gamePhase = other.gamePhase;
     this.roundI = other.roundI;
     this.roundPhase = other.roundPhase;
-    this.turnPlayerId = other.turnPlayerId;
+    this.turnPlayerI = other.turnPlayerI;
+    this.inExtraTime = other.inExtraTime;
   }
 
   isEqual(other) {
@@ -162,7 +196,8 @@ class AncientLorePhase {
       this.gamePhase == other.gamePhase && 
       this.roundI == other.roundI &&
       this.roundPhase == other.roundPhase &&
-      this.turnPlayerId == other.turnPlayerId
+      this.turnPlayerI == other.turnPlayerI &&
+      this.inExtraTime == other.inExtraTime
     );
   }
 
@@ -182,6 +217,10 @@ class AncientLorePhase {
     );
   }
 
+  isInExtraTime() {
+    return this.inExtraTime;
+  }
+
   isExecutingActions() {
     return (
       this.isPlaying() && 
@@ -197,18 +236,27 @@ class AncientLorePhase {
   reset() {
     this.gamePhase = "forming";
     this.roundI = -1;
+    this.roundPhase = "";
+    this.turnPlayerI = -1;
+    this.inExtraTime = false;
   }
 
   beginRound() {
     this.gamePhase = "playing";
     ++this.roundI;
     this.roundPhase = "selecting-actions";
-    this.turnPlayerId = -1;
+    this.turnPlayerI = -1;
+    this.inExtraTime = false;
+  }
+
+  beginExtraTime() {
+    this.inExtraTime = true;
   }
 
   beginTurn() {
     this.roundPhase = "executing-actions";
-    ++this.turnPlayerId;
+    ++this.turnPlayerI;
+    this.inExtraTime = false;
   }
 
   finish() {
@@ -288,7 +336,14 @@ class AncientLoreGame extends BasicGame {
       this.board.updateLocations(m.locations);
 
       if (m.phase.isSelectingActions()) {
-        this.generator.askForActionSelection();
+        if (!m.phase.isInExtraTime()) {
+          this.generator.askForActionSelection();
+        } else {
+          this.generator.offerToContinueRegardless();
+        }
+      } else if (m.phase.isExecutingActions()) {
+        // TODO Display the actions that the other players selected.
+        this.generator.clearSelectionOptions();
       }
 
       // this.generator.offerToMoveUnits(m.locations);
@@ -392,7 +447,13 @@ class AncientLoreBoardUpdater {
 
 class AncientLoreModel extends LogEventConsumer {
   constructor() {
-    super([PeerJoinEvent, StartAncientLoreEvent, MoveUnitsEvent]);
+    super([
+      PeerJoinEvent, 
+      StartAncientLoreEvent, 
+      ActionSelectedEvent, 
+      ContinueEvent, 
+      MoveUnitsEvent
+    ]);
     this.phase = new AncientLorePhase();
     this.listeners = [];
 
@@ -456,8 +517,53 @@ class AncientLoreModel extends LogEventConsumer {
   }
 
   beginRound() {
+    for (let player of this.players) {
+      player.selectedAction = undefined;
+    }
     this.numPlayersMovedUnits = 0;
-    this.phase.beginRound()
+    this.phase.beginRound();
+  }
+
+  onActionSelected(playerId, action, locationId) {
+    if (!this.phase.isSelectingActions()) {
+      // Ignore these events if no longer selecting actions. This could happen
+      // if a peer allows action selection and then realizes the phase is 
+      // already over.
+      return;
+    }
+
+    this.players[playerId].selectedAction = {
+      action: action, 
+      locationId: locationId
+    };
+    let hasEveryoneSentSomething = true;
+    let isEveryoneReady = true;
+    for (let player of this.players) {
+      if (player.selectedAction == undefined) {
+        hasEveryoneSentSomething = false;
+        isEveryoneReady = false;
+        break;
+      }
+      if (
+        player.selectedAction.action == undefined || 
+        player.selectedAction.locationId == undefined
+      ) {
+        isEveryoneReady = false;
+        // Need to continue to check whether everyone has even sent something.
+      }
+    }
+    if (isEveryoneReady) {
+      this.phase.beginTurn();
+    } else if (hasEveryoneSentSomething) {
+      this.phase.beginExtraTime();
+    }
+  }
+
+  onContinue(playerId) {
+    if (this.phase.isSelectingActions() && this.phase.isInExtraTime()) {
+      // Some players have an undefined action/locationId.
+      this.phase.beginTurn();
+    }
   }
 
   onMoveUnits(playerId, movements) {
@@ -518,6 +624,8 @@ class AncientLoreEventGenerator {
     this.myPlayerId = -1; // Set in onStartGame. -1 means observer.
 
     this.eventLog.registerEventType(StartAncientLoreEvent);
+    this.eventLog.registerEventType(ActionSelectedEvent);
+    this.eventLog.registerEventType(ContinueEvent);
     this.eventLog.registerEventType(MoveUnitsEvent);
   }
 
@@ -547,25 +655,70 @@ class AncientLoreEventGenerator {
     });
   }
 
+  clearSelectionOptions() {
+    this.input.cancelOngoingSelection();
+    // TODO Clear the settlement selection highlight.
+  }
+
   askForActionSelection() {
-    let onTimeHasRunOutFn = () => {
-      // TODO Send a TimeHasRunOut event.
-      // TODO Once a time has run out event has been receive from all the 
-      //      players, offer the option to continue regardless of whether 
-      //      others are ready.
-    };
-    
+    if (this.myPlayerId < 0) { 
+      this.input.startCountdown(30000);
+      return; 
+    }
+    let hasSentASelection = false;
+    let action;
+    let locationId;
+    let onSelectionChanges = (newAction, newLocationId) => {
+      action = newAction;
+      locationId = newLocationId;
+      if (hasSentASelection) {
+        this.sendActionSelection(action, locationId);
+      }
+    }
+
+    let onDoneFn = () => {
+      /**
+       * Send the currently selected action, if no action is selected send
+       * that. When a selected action (including "undefined") has been 
+       * received from all players, then offer the option to continue 
+       * regardless of whether others are ready.
+       */
+      if (!hasSentASelection) {
+        this.sendActionSelection(action, locationId);
+        hasSentASelection = true;
+      }
+    }
+
     console.log(
-      `TODO consider whether to send an event whenever the
-      selection changes, or only when action selection is over.`
+      `Send an event whenever the player is ready or the time is up, or when
+      the selection changes after an event has been sent.`
     );
-    this.input.startSelectingAnAction(onTimeHasRunOutFn);
+    this.input.startSelectingAnAction(onSelectionChanges);
+    this.input.showReadyOption(onDoneFn);
+    this.input.startCountdown(10000, onDoneFn); // TODO 30000
+  }
+
+  sendActionSelection(action, locationId) {
+    let actionSelectedEvent = ActionSelectedEvent.makeNow(
+      0, this.eventLog.swarm.myId, this.myPlayerId, action, locationId
+    );
+    this.eventLog.add(actionSelectedEvent);
+  }
+  
+  offerToContinueRegardless() {
+    if (this.myPlayerId < 0) { return; }
+    this.input.showContinueOption(this.sendContinueInstruction.bind(this));
+  }
+
+  sendContinueInstruction() {
+    let continueEvent = ContinueEvent.makeNow(
+      0, this.eventLog.swarm.myId, this.myPlayerId
+    );
+    this.eventLog.add(continueEvent);
   }
 
   offerToMoveUnits(locations) {
-    if (this.myPlayerId < 0) {
-      return;
-    }
+    if (this.myPlayerId < 0) { return; }
     let maxUnitsPerSettlement = [];
     for (let location of locations) {
       maxUnitsPerSettlement.push(location.players[this.myPlayerId].numUnits);
@@ -623,8 +776,7 @@ class AncientLoreGameSetup {
     startGameButton.setAttribute("type" , "button");
     startGameButton.value = "Start Game...";
     startGameButton.style.display = "block";
-    startGameButton.style.fontSize = "large";
-    startGameButton.style.color = "#3377aa";
+    startGameButton.className = "button";
     startGameButton.addEventListener("click", () => {
       let options = {
         players : [],
@@ -682,33 +834,52 @@ class AncientLoreInputCollector {
     this.overlay = rootElement.querySelector(".input-overlay");
     this.board = rootElement.querySelector(".board");
     this.cardsArea = rootElement.querySelector(".cards-area");
+    this.readyButton = rootElement.querySelector(".flow-control-area .ready.button");
+    this.continueButton = rootElement.querySelector(".flow-control-area .continue.button");
     this.actionSelection = new ActionSelection(this.cardsArea);
     this.settlementSelection = new SettlementSelection(this.board);
     this.unitsToMoveSelection = new UnitsToMoveSelection(this.overlay, this.board);
     this.countdown;
   }
 
-  startSelectingAnAction(onTimeHasRunOutFn) {
-    this.cancelOngoingSelection();
-
-    this.actionSelection.start();
-    this.settlementSelection.start();
-    
-    this.countdown = new Countdown(30000, 101, this.overlay);
-    let onFinishFn = () => { 
-      onTimeHasRunOutFn();
-    };
-    this.countdown.start(onFinishFn);
+  startCountdown(timeInMs, onDoneFn) {
+    this.countdown = new Countdown(timeInMs, 101, this.overlay);
+    this.countdown.start(onDoneFn);
   }
 
-  finishSelectingAnAction() {
-    let selection = {
-      action: this.actionSelection.selectedAction,
-      settlementId: this.settlementSelection.selectedId
-    };
+  showReadyOption(onClickFn) {
+    this.readyButton.addEventListener("click", () => {onClickFn()});
+    this.readyButton.style.display = "block";
+  }
 
+  showContinueOption(onClickFn) {
+    this.continueButton.addEventListener("click", () => {onClickFn()});
+    this.continueButton.style.display = "block";
+  }
+
+  startSelectingAnAction(onSelectionChanges) {
     this.cancelOngoingSelection();
-    return selection;
+
+    this.readyButton.disabled = true;
+
+    let action;
+    let locationId;
+    let myOnSelectionChanges = () => {
+      onSelectionChanges(action, locationId);
+      if (action != undefined && locationId != undefined) {
+        this.readyButton.disabled = false;
+      }
+    };
+    let onActionSelected = (newAction) => {
+      action = newAction;
+      myOnSelectionChanges();
+    };
+    let onLocationSelected = (newLocationId) => {
+      locationId = newLocationId;
+      myOnSelectionChanges();
+    };
+    this.actionSelection.start(onActionSelected);
+    this.settlementSelection.start(onLocationSelected);
   }
 
   startSelectingUnitsToMove(toSettlementId, maxUnitsPerSettlement, sendTo) {
@@ -724,6 +895,10 @@ class AncientLoreInputCollector {
   }
 
   cancelOngoingSelection() {
+    this.readyButton.style.display = "none";
+    this.readyButton.disabled = false;
+    this.continueButton.style.display = "none";
+    this.continueButton.disabled = false;
     this.actionSelection.cancel();
     this.settlementSelection.cancel();
     this.unitsToMoveSelection.cancel();
@@ -738,7 +913,7 @@ class ActionSelection {
   constructor(cardsArea) {
     this.cardsArea = cardsArea;
     this.initCardElements();
-    this.selectedAction;
+    this.onActionSelected;
   }
 
   initCardElements() {
@@ -761,7 +936,9 @@ class ActionSelection {
       card.querySelector(".border").style.stroke = "#ff0000";
       card.style.paddingTop = "0%";
       card.style.paddingBottom = "1%";
-      this.selectedAction = gameAction;
+      if (this.onActionSelected) {
+        this.onActionSelected(gameAction);
+      }
     });
     card.className = "action card";
     card.innerHTML = html;
@@ -772,8 +949,8 @@ class ActionSelection {
     this.cardsArea.appendChild(card);
   }
 
-  start() {
-    this.selectedAction = undefined;
+  start(onActionSelected) {
+    this.onActionSelected = onActionSelected;
 
     for (let card of this.cards) {
       card.style.display = "block";
@@ -781,6 +958,7 @@ class ActionSelection {
   }
 
   cancel() {
+    this.onActionSelected = undefined;
     for (let card of this.cards) {
       card.style.display = "none";
     }
@@ -796,10 +974,12 @@ class SettlementSelection {
     this.board = board;
     this.clickHandlers = [];
     this.selectedId;
+    this.onLocationSelected;
   }
 
-  start() {
+  start(onLocationSelected) {
     this.selectedId = -1;
+    this.onLocationSelected = onLocationSelected;
 
     let numSettlements = this.board.querySelectorAll(".settlement").length;
     for (let i = 0; i < numSettlements; i++) {
@@ -807,6 +987,9 @@ class SettlementSelection {
         event.stopPropagation();
         this.selectedId = i;
         this.updateHighlight();
+        if (this.onLocationSelected) {
+          this.onLocationSelected(this.selectedId);
+        }
       });
       let settlement = this.board.querySelector(".settlement" + i + ".settlement");
       settlement.addEventListener("click", this.clickHandlers[i]);
@@ -816,11 +999,12 @@ class SettlementSelection {
   }
   
   cancel() {
+    this.onLocationSelected = undefined;
     this.removeClickHandlers();
   }
 
   finish() {
-    this.removeClickHandlers();
+    this.cancel();
     this.updateHighlight("#ff0000");
   }
 
@@ -951,7 +1135,9 @@ class Countdown {
     this.timeRemainingInMs -= this.frequencyInMs;
     if (this.timeRemainingInMs <= 0) {
       this.cancel();
-      this.onFinishFn();
+      if (this.onFinishFn) {
+        this.onFinishFn();
+      }
     }
   }
 
