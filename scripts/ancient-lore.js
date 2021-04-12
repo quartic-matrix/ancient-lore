@@ -178,7 +178,7 @@ class AncientLorePhase {
     this.gamePhase = "";
     this.roundI = -1;
     this.roundPhase = "";
-    this.turnPlayerI = -1;
+    this.turnI = -1;
     this.inExtraTime = false;
     // Remember to update copyFrom and isEqual.
   }
@@ -187,7 +187,7 @@ class AncientLorePhase {
     this.gamePhase = other.gamePhase;
     this.roundI = other.roundI;
     this.roundPhase = other.roundPhase;
-    this.turnPlayerI = other.turnPlayerI;
+    this.turnI = other.turnI;
     this.inExtraTime = other.inExtraTime;
   }
 
@@ -196,7 +196,7 @@ class AncientLorePhase {
       this.gamePhase == other.gamePhase && 
       this.roundI == other.roundI &&
       this.roundPhase == other.roundPhase &&
-      this.turnPlayerI == other.turnPlayerI &&
+      this.turnI == other.turnI &&
       this.inExtraTime == other.inExtraTime
     );
   }
@@ -237,7 +237,7 @@ class AncientLorePhase {
     this.gamePhase = "forming";
     this.roundI = -1;
     this.roundPhase = "";
-    this.turnPlayerI = -1;
+    this.turnI = -1;
     this.inExtraTime = false;
   }
 
@@ -245,7 +245,7 @@ class AncientLorePhase {
     this.gamePhase = "playing";
     ++this.roundI;
     this.roundPhase = "selecting-actions";
-    this.turnPlayerI = -1;
+    this.turnI = -1;
     this.inExtraTime = false;
   }
 
@@ -255,7 +255,7 @@ class AncientLorePhase {
 
   beginTurn() {
     this.roundPhase = "executing-actions";
-    ++this.turnPlayerI;
+    ++this.turnI;
     this.inExtraTime = false;
   }
 
@@ -322,9 +322,12 @@ class AncientLoreGame extends BasicGame {
       this.board.loadBoard(m.options);
       this.generator.onStartGame(m.players);
       
-    } else if (this.phase.isSelectingActions()) {
+    } else if (
+      this.phase.isSelectingActions() && 
+      !m.phase.isSelectingActions()
+    ) {
       // This was previously selecting an action, that needs to stop.
-      console.log('TODO finish action selection');
+      this.generator.clearSelectionOptions();
     }
 
     if (m.phase.isForming()) {
@@ -341,9 +344,12 @@ class AncientLoreGame extends BasicGame {
         } else {
           this.generator.offerToContinueRegardless();
         }
+
       } else if (m.phase.isExecutingActions()) {
         // TODO Display the actions that the other players selected.
-        this.generator.clearSelectionOptions();
+        let mTurn = m.turns[m.phase.turnI];
+        
+        console.log('TODO check the turn and do it');
       }
 
       // this.generator.offerToMoveUnits(m.locations);
@@ -394,6 +400,12 @@ class PlayerList  {
     if (player) {
       let vpNode = document.createTextNode(" : " + player.victoryPoints.toString());
       para.appendChild(vpNode);
+
+      if (player.isActive) {
+        para.classList.add("active-player");
+      } else {
+        para.classList.remove("active-player");
+      }
     } else {
       para.style.fontStyle = "italic";
     }
@@ -471,6 +483,7 @@ class AncientLoreModel extends LogEventConsumer {
     this.winners = []; // Added to in endRound.
     this.locations = []; // Setup in setupBoard.
     this.phase.reset();
+    this.turns = [];
     this.numPlayersMovedUnits = 0;
   }
 
@@ -519,6 +532,7 @@ class AncientLoreModel extends LogEventConsumer {
   beginRound() {
     for (let player of this.players) {
       player.selectedAction = undefined;
+      player.isActive = true;
     }
     this.numPlayersMovedUnits = 0;
     this.phase.beginRound();
@@ -532,10 +546,15 @@ class AncientLoreModel extends LogEventConsumer {
       return;
     }
 
-    this.players[playerId].selectedAction = {
+    let fromPlayer = this.players[playerId];
+    fromPlayer.selectedAction = {
       action: action, 
       locationId: locationId
     };
+    fromPlayer.isActive = 
+      fromPlayer.selectedAction.action == undefined ||
+      fromPlayer.selectedAction.locationId == undefined;
+
     let hasEveryoneSentSomething = true;
     let isEveryoneReady = true;
     for (let player of this.players) {
@@ -544,16 +563,13 @@ class AncientLoreModel extends LogEventConsumer {
         isEveryoneReady = false;
         break;
       }
-      if (
-        player.selectedAction.action == undefined || 
-        player.selectedAction.locationId == undefined
-      ) {
+      if (player.isActive) {
         isEveryoneReady = false;
         // Need to continue to check whether everyone has even sent something.
       }
     }
     if (isEveryoneReady) {
-      this.phase.beginTurn();
+      this.beginExecutingActions();
     } else if (hasEveryoneSentSomething) {
       this.phase.beginExtraTime();
     }
@@ -564,6 +580,40 @@ class AncientLoreModel extends LogEventConsumer {
       // Some players have an undefined action/locationId.
       this.phase.beginTurn();
     }
+  }
+
+  beginExecutingActions() {
+    const actionOrder = 
+      [undefined, "regroup", "proclaim", "contest", "move", "invade"];
+    
+    for (let playerId = 0; playerId < this.players.length; ++playerId) {
+      const selectedAction = this.players[playerId].selectedAction;
+      this.turns.push({
+        playerId: playerId, 
+        actionI: actionOrder.indexOf(selectedAction.action),
+        action: selectedAction.action,
+        locationId: selectedAction.locationId,
+      });
+    }
+    
+    this.turns.sort((a, b) => {
+      const actionIDiff = a.actionI - b.actionI;
+      if (actionIDiff) {
+        return actionIDiff; 
+      } else { 
+        return this.players[a.playerI].rank - this.players[b.playerI].rank;
+      }
+    });
+
+    this.beginTurn();
+  }
+
+  beginTurn() {
+    for (const player of this.players) {
+      player.isActive = false;
+    }
+    this.phase.beginTurn();
+    this.players[this.turns[this.phase.turnI].playerId].isActive = true;
   }
 
   onMoveUnits(playerId, movements) {
@@ -634,13 +684,14 @@ class AncientLoreEventGenerator {
   }
 
   startGame(options) {
-    let rank = new Map();
-    for (const player of options.players) {
-      rank.set(player.peerId, Math.random());
+    let orderedPlayers = [];
+    for (let playerId = 0; playerId < options.players.length; ++playerId) {
+      orderedPlayers.push({playerId: playerId, x: Math.random()});
     }
-    options.players.sort((a, b) => {
-      return rank.get(a.peerId) - rank.get(b.peerId);
-    });
+    orderedPlayers.sort((a, b) => { return a.x - b.x; });
+    for (let rank = 0; rank < orderedPlayers.length; ++rank) {
+      options.players[orderedPlayers[rank].playerId].rank = rank;
+    }
 
     let startGameEvent = StartAncientLoreEvent.makeNow(
       0, this.eventLog.swarm.myId, options
