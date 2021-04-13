@@ -292,7 +292,7 @@ class AncientLoreGame extends BasicGame {
     
     // Display
     this.board = new AncientLoreBoardUpdater(domElement);
-    this.playerList = new PlayerList(domElement, playerName);
+    this.playerList = new PlayerList(domElement, playerName, this.board);
     this.conclusionDisplay = new ConclusionDisplay(domElement);
 
     // Internal model
@@ -310,7 +310,7 @@ class AncientLoreGame extends BasicGame {
 
   onModelUpdated() {
     const m = this.model;
-    this.playerList.update(m.peers, m.players);
+    this.playerList.update(m.peers, m.players, m.phase.isExecutingActions());
     this.gameSetup.updateGameSetupOptions(m.peers);
 
     if (this.phase.isEqual(m.phase)) {
@@ -366,18 +366,19 @@ class AncientLoreGame extends BasicGame {
 }
 
 class PlayerList  { 
-  constructor(rootElement, myPlayerName) {
+  constructor(rootElement, myPlayerName, board) {
     rootElement.querySelector(".players").innerHTML += playersHtml.trim();
     this.playerListElement = rootElement.querySelector(".player-list");
     this.myPlayerName = myPlayerName;
+    this.board = board;
     this.peers = [];
   }
 
-  update(peers, players) {
+  update(peers, players, displayOthersActions) {
     this.playerListElement.innerHTML = "";
 
     for (const player of players) {
-      this.display(player.name, player);
+      this.display(player.name, player, displayOthersActions);
     }
 
     for (const peer of peers) {
@@ -388,7 +389,7 @@ class PlayerList  {
     }
   }
 
-  display(playerName, player) {
+  display(playerName, player, displayOthersActions) {
     let para = document.createElement("p");
     if (this.myPlayerName == playerName) {
       para.style.fontWeight = "bold";
@@ -406,11 +407,39 @@ class PlayerList  {
       } else {
         para.classList.remove("active-player");
       }
+
+      if (
+        (this.myPlayerName == playerName || displayOthersActions) &&
+        player.selectedAction && 
+        player.selectedAction.action != undefined &&
+        player.selectedAction.locationId != undefined
+      ) {
+        let br = document.createElement("br");
+        para.appendChild(br);
+
+        let actionDescription = document.createTextNode(
+          this.textForAction(player.selectedAction.action) + " " +
+          this.board.nameOfLocation(player.selectedAction.locationId)
+        );
+        para.appendChild(actionDescription);
+      }
+
     } else {
       para.style.fontStyle = "italic";
     }
 
     this.playerListElement.appendChild(para);
+  }
+
+  textForAction(action) {
+    switch (action) {
+      case "regroup": return "Regroup in";
+      case "proclaim": return "Proclaim lore in";
+      case "contest": return "Contest";
+      case "move": return "Move to";
+      case "invade": return "Invade";
+      default: return "No action";
+    }
   }
 }
 
@@ -435,6 +464,12 @@ class AncientLoreBoardUpdater {
     if (options.numLocations == 3) {
       this.board.innerHTML = boardHtml.trim();
     }
+
+    this.locationNames = [];
+    for (let locationId = 0; locationId < options.numLocations; locationId++) {
+      const nameEle = this.board.querySelector(".settlement" + locationId + ".name").children[0];
+      this.locationNames.push(nameEle.innerHTML);
+    }
   }
 
   updateLocations(locations) {
@@ -454,6 +489,10 @@ class AncientLoreBoardUpdater {
     if (numberText) {
       numberText.children[0].innerHTML = numUnits.toString();
     }
+  }
+
+  nameOfLocation(locationId) {
+    return this.locationNames[locationId];
   }
 }
 
