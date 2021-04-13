@@ -617,7 +617,7 @@ class AncientLoreModel extends LogEventConsumer {
   onContinue(playerId) {
     if (this.phase.isSelectingActions() && this.phase.isInExtraTime()) {
       // Some players have an undefined action/locationId.
-      this.phase.beginTurn();
+      this.beginExecutingActions();
     }
   }
 
@@ -627,12 +627,18 @@ class AncientLoreModel extends LogEventConsumer {
     
     for (let playerId = 0; playerId < this.players.length; ++playerId) {
       const selectedAction = this.players[playerId].selectedAction;
-      this.turns.push({
-        playerId: playerId, 
-        actionI: actionOrder.indexOf(selectedAction.action),
-        action: selectedAction.action,
-        locationId: selectedAction.locationId,
-      });
+      if (
+        selectedAction && 
+        selectedAction.action != undefined &&
+        selectedAction.locationId != undefined
+      ) {
+        this.turns.push({
+          playerId: playerId, 
+          actionI: actionOrder.indexOf(selectedAction.action),
+          action: selectedAction.action,
+          locationId: selectedAction.locationId,
+        });
+      }
     }
     
     this.turns.sort((a, b) => {
@@ -640,7 +646,7 @@ class AncientLoreModel extends LogEventConsumer {
       if (actionIDiff) {
         return actionIDiff; 
       } else { 
-        return this.players[a.playerI].rank - this.players[b.playerI].rank;
+        return this.players[a.playerId].rank - this.players[b.playerId].rank;
       }
     });
 
@@ -648,11 +654,14 @@ class AncientLoreModel extends LogEventConsumer {
   }
 
   beginTurn() {
+    this.phase.beginTurn();
+    const turn = this.turns[this.phase.turnI];
+
     for (const player of this.players) {
       player.isActive = false;
     }
-    this.phase.beginTurn();
-    this.players[this.turns[this.phase.turnI].playerId].isActive = true;
+    this.players[turn.playerId].isActive = true;
+    
   }
 
   onMoveUnits(playerId, movements) {
