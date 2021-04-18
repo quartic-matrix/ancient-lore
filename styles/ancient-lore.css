@@ -48,3 +48,8 @@
   font-size: "large";
   color: "#3377aa";
 }
+
+input.location-units {
+  visibility:hidden; 
+  font:400 1em Trirong; width:3em;
+}
