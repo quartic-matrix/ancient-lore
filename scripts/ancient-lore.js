@@ -1011,7 +1011,6 @@ class AncientLoreInputCollector {
     this.actionSelection = new ActionSelection(this.cardsArea);
     this.settlementSelection = new SettlementSelection(this.board);
     this.unitsToMoveSelection = new UnitsToMoveSelection(this.overlay, this.board);
-    this.unitsToRegroupSelection = new UnitsToRegroupSelection(this.overlay, this.board);
     this.countdown;
   }
 
@@ -1070,18 +1069,18 @@ class AncientLoreInputCollector {
   }
 
   startRegroupSelection(
-    locationId, 
+    toLocationId, 
     maxUnitsPerSettlement,
     onInputChanged
   ) {
     this.cancelOngoingSelection();
-    this.settlementSelection.highlighter.update(locationId, "#ff0000");
+    this.settlementSelection.highlighter.update(toLocationId, "#ff0000");
     /**
      * Place a number input on top of each of the other locations. Whenever
      * these are changed update numUnitsFromSettlements.
      */
-    this.unitsToRegroupSelection.start(
-      locationId, maxUnitsPerSettlement, onInputChanged
+    this.unitsToMoveSelection.start(
+      toLocationId, maxUnitsPerSettlement, onInputChanged
     );
   }
 
@@ -1109,7 +1108,6 @@ class AncientLoreInputCollector {
     this.actionSelection.cancel();
     this.settlementSelection.cancel();
     this.unitsToMoveSelection.cancel();
-    this.unitsToRegroupSelection.cancel();
     
     if (this.countdown) {
       this.countdown.cancel();
@@ -1253,7 +1251,7 @@ class SettlementHighlighter {
   }
 }
 
-class UnitsToRegroupSelection {
+class UnitsToMoveSelection {
   constructor(overlay, board) {
     this.overlay = overlay;
     this.board = board;
@@ -1303,16 +1301,17 @@ class UnitsToRegroupSelection {
     }
   }
 
-  start(locationId, maxUnitsPerSettlement, onInputChanged) {
+  start(toLocationId, maxUnitsPerSettlement, onInputChanged) {
     this.onInputChanged = onInputChanged;
     if (this.inputs.length == 0) {
       this.initInputs();
     }
 
     for (const input of this.inputs) {
-      if (input.locationId != locationId) {
+      const maxUnits = maxUnitsPerSettlement[input.locationId];
+      if (input.locationId != toLocationId && maxUnits) {
         input.style.visibility = "visible";
-        input.max = maxUnitsPerSettlement[input.locationId].toString();
+        input.max = maxUnits.toString();
         input.value = "0";
       }
     }
@@ -1322,85 +1321,6 @@ class UnitsToRegroupSelection {
     for (const input of this.inputs) {
       input.style.visibility = "hidden";
     }
-  }
-}
-
-class UnitsToMoveSelection {
-  constructor(overlay, board) {
-    this.overlay = overlay;
-    this.board = board;
-    this.countdown; 
-    this.clickHandlers = [];
-    this.moveElements = [];
-  }
-
-  /**
-   * @param {*} sendTo(numUnitsFromSettlements)
-   */
-  start(toSettlementId, maxUnitsPerSettlement, sendTo) {
-    let numFromSettlements = new Map();
-
-    let toSettlementClass = ".settlement" + toSettlementId;
-
-    this.moveElements = this.board.querySelectorAll(".move" + toSettlementClass); 
-    this.moveElements.forEach((element) => {
-      element.style.visibility = "visible";
-    });
-
-    let arrows = this.board.querySelectorAll(".arrow" + toSettlementClass);
-    arrows.forEach((arrow) => {
-      let arrowToSettlement = parseInt(arrow.getAttribute("tosettlement"));
-      let arrowFromSettlement = parseInt(arrow.getAttribute("fromsettlement"));
-      let isInward = arrowToSettlement == toSettlementId;
-      let otherSettlementId = isInward ? arrowFromSettlement : arrowToSettlement;
-      let numberElement = this.board.querySelector(
-        ".move.number" + toSettlementClass + ".settlement" + otherSettlementId
-      );
-      if (!numFromSettlements.has(otherSettlementId)) {
-        numFromSettlements.set(otherSettlementId, 0)
-        numberElement.children[0].innerHTML = "0";
-      }
-      let onClickFn = (event) => {
-        event.stopPropagation();
-        let numUnits = Math.max(
-          numFromSettlements.get(otherSettlementId) + 2*isInward - 1, 0
-        );
-        numUnits = Math.min(maxUnitsPerSettlement[otherSettlementId], numUnits);
-        numFromSettlements.set(otherSettlementId, numUnits);
-        numberElement.children[0].innerHTML = numUnits.toString();
-      }
-      this.clickHandlers.push({ element: arrow, function: onClickFn });
-      arrow.addEventListener("click", onClickFn);
-    });
-
-    this.countdown = new Countdown(10000, 101, this.overlay);
-    let onFinishFn = () => { 
-      this.finish(); 
-      sendTo(numFromSettlements);
-    };
-    this.countdown.start(onFinishFn);
-  }
-  
-  cancel() {
-    if (this.countdown) {
-      this.countdown.cancel();
-      this.finish();
-    }
-  }
-
-  finish() {
-    this.moveElements.forEach((element) => {
-      element.style.visibility = "hidden";
-    });
-
-    this.removeClickHandlers();
-  }
-
-  removeClickHandlers() {
-    this.clickHandlers.forEach((handler) => {
-      handler.element.removeEventListener("click", handler.function);
-    });
-    this.clickHandlers = [];
   }
 }
 
