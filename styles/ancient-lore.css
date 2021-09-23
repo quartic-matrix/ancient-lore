@@ -53,3 +53,9 @@ input.location-units {
   visibility:hidden; 
   font:400 1em Trirong; width:3em;
 }
+
+.unit-display-area {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+}

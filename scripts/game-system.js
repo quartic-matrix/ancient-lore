@@ -1,6 +1,18 @@
 
 'use strict'
 
+function generateHslaColors (saturation, lightness, alpha, amount) {
+  let colors = []
+  let huedelta = Math.trunc(360 / amount)
+
+  for (let i = 0; i < amount; i++) {
+    let hue = i * huedelta
+    colors.push(`hsla(${hue},${saturation}%,${lightness}%,${alpha})`)
+  }
+
+  return colors
+}
+
 function querySelectorFrom(elements, selector) {
   return [].filter.call(elements, function(element) {
       return element.matches(selector);

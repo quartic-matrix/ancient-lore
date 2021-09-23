@@ -485,17 +485,35 @@ class AncientLoreBoardUpdater {
   constructor(rootElement) {
     this.board = rootElement.querySelector(".board");
     this.highlighter; // Set in loadBoard.
+    this.locations; // Set in loadBoard.
+    this.colours = generateHslaColors(60, 30, 1.0, 6);
   }
 
   loadBoard(options) {
     if (options.numLocations == 3) {
-      this.board.innerHTML = boardHtml.trim();
+      this.board.innerHTML = board3Html.trim();
+    } else if (options.numLocations == 5) {
+      this.board.innerHTML = board5Html.trim();
     }
 
-    this.locationNames = [];
+    this.locations = [];
     for (let locationId = 0; locationId < options.numLocations; locationId++) {
-      const nameEle = this.board.querySelector(".settlement" + locationId + ".name").children[0];
-      this.locationNames.push(nameEle.innerHTML);
+      let location = {};
+
+      const nameEle = 
+        this.board.querySelector(".settlement" + locationId + " .name").children[0];
+      location.name = nameEle.innerHTML;
+
+      location.unitDisplayArea = this.makeUnitDisplayArea(locationId);
+
+      location.unitDisplays = [];
+      for (let playerId = 0; playerId < options.players.length; ++playerId) {
+        let unitDisplay = this.makeUnitDisplay(location, playerId);
+        location.unitDisplayArea.appendChild(unitDisplay);
+        location.unitDisplays.push(unitDisplay);
+      }
+
+      this.locations.push(location);
     }
 
     this.highlighter = new SettlementHighlighter(this.board);
@@ -512,16 +530,89 @@ class AncientLoreBoardUpdater {
   }
 
   updateUnitsForPlayerInLocation(locationId, playerId, numUnits) {
+    /*
     let numberText = this.board.querySelector(
       ".settlement" + locationId + ".player" + playerId + ".number"
     );
-    if (numberText) {
-      numberText.children[0].innerHTML = numUnits.toString();
+    */
+    let location = this.locations[locationId];
+    let unitDisplay = location.unitDisplays[playerId];
+    if (unitDisplay) {
+      if (numUnits == 0) {
+        unitDisplay.style.display = "none";
+      } else {
+        unitDisplay.style.display = "block";
+        
+        let numberText = unitDisplay.querySelector(".unit-number");
+        if (numberText) {
+          numberText.children[0].innerHTML = numUnits.toString();
+        }
+      }
     }
   }
 
+  makeUnitDisplay(location, playerId) {
+
+    let unitDisplay = document.createElement("div");
+    let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    // <svg viewBox="-508 54 66 138" width="66" height="138"><g id="g971" class="unit"></g>
+    svg.setAttribute("viewBox", "-508 54 66 138");
+    svg.setAttribute("width", "66");
+    svg.setAttribute("height", "138");
+
+    // TODO colour it.
+    const exampleUnit = this.board.querySelector(".examples .unit");
+    let unit = exampleUnit.cloneNode(true);
+    let back = unit.querySelector(".unit-fill");
+    back.style.fill = this.colours[playerId];
+
+    svg.appendChild(unit);
+    unitDisplay.appendChild(svg);
+    return unitDisplay;
+  }
+
+  makeUnitDisplayArea(locationId) {
+    let parent = this.board.querySelector(".settlement" + locationId + ".settlement");
+    const name = parent.querySelector(".name");
+
+    let parentBox = parent.getBBox();
+    let nameBox = name.getBBox();
+
+    const x = parentBox.x;
+    const y = (nameBox.y + 1.5*nameBox.height);
+    const width = parentBox.width;
+    const height = 3*nameBox.height;
+
+    // const x = name.x.baseVal[0].value;
+    // const y = (name.y.baseVal[0].value + 20);
+
+    let group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    // let m = new DOMMatrix([0.4,0,0,0.4,x,y]);
+    let m = document.createElementNS("http://www.w3.org/2000/svg", "svg").createSVGMatrix();
+    m.a = 1; m.b = 0; 
+    m.c = 0; m.d = 1;
+    m.e = x; m.f = y;
+    group.transform.baseVal.initialize(
+      group.transform.baseVal.createSVGTransformFromMatrix(m)
+    );
+
+    let foreignObject = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
+    foreignObject.style.width = width;
+    foreignObject.style.height = height;
+
+    let div = document.createElement("div");
+    div.classList.add("unit-display-area");
+    div.style.width = width;
+    div.style.height = height;
+ 
+    foreignObject.appendChild(div);
+    group.appendChild(foreignObject);
+    parent.appendChild(group);
+    return div;
+  }
+
   nameOfLocation(locationId) {
-    return this.locationNames[locationId];
+    return this.locations[locationId].name;
   }
 
   updateHighlight(locationId) {
@@ -947,7 +1038,7 @@ class AncientLoreGameSetup {
     startGameButton.addEventListener("click", () => {
       let options = {
         players : [],
-        numLocations : 3 // TODO perhaps a board should be selected
+        numLocations : 5 // TODO perhaps a board should be selected
       };
       for (let child of this.playerSelection.children) {
         if (child.className = "player-selected" && child.checked) {
@@ -1265,7 +1356,7 @@ class UnitsToMoveSelection {
     const names = this.board.querySelectorAll(".name"); 
 
     for (let i = 0; i < names.length; ++i) {
-      const name = this.board.querySelector(".name.settlement" + i);
+      const name = this.board.querySelector(".settlement" + i + " .name");
       let parent = name.parentElement;
 
       const x = name.x.baseVal[0].value;
