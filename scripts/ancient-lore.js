@@ -310,17 +310,19 @@ class AncientLoreGame extends BasicGame {
 
   onModelUpdated() {
     const m = this.model;
-    this.playerList.update(m.peers, m.players, m.phase.isExecutingActions());
     this.gameSetup.updateGameSetupOptions(m.peers);
-
+    
     if (this.phase.isEqual(m.phase)) {
+      this.playerList.update(m.peers, m.players, m.phase.isExecutingActions());
       return;
     }
-
+    
     if (this.phase.isForming()) {
       // This was previously forming, so some setup is needed.
       this.board.loadBoard(m.options);
-      this.generator.onStartGame(m.players);
+      this.inputCollector.onBoardLoaded();
+      this.generator.onStartGame(m.players, this.playerList.myPlayerName);
+      this.model.setupConnections(this.board.connections());
       
     } else if (
       this.phase.isSelectingActions() && 
@@ -329,7 +331,9 @@ class AncientLoreGame extends BasicGame {
       // This was previously selecting an action, that needs to stop.
       this.generator.clearSelectionOptions();
     }
-
+    // Need to load the board prior to updating players.
+    this.playerList.update(m.peers, m.players, m.phase.isExecutingActions());
+      
     if (m.phase.isForming()) {
       this.generator.offerToStartGame();
 
@@ -348,8 +352,6 @@ class AncientLoreGame extends BasicGame {
       } else if (m.phase.isExecutingActions()) {
         this.progressTurn(m, m.turns[m.phase.turnI]);
       }
-
-      // this.generator.offerToMoveUnits(m.locations);
 
     } else if (m.phase.isFinished()) {
       this.board.clearHighlight();
@@ -386,7 +388,7 @@ class AncientLoreGame extends BasicGame {
         break;
       }
       case 4: { // Move
-        console.log('TODO Move');
+        this.generator.beginMove(turn, m.locations);
         break;
       }
       case 5: { // Invade
@@ -517,6 +519,18 @@ class AncientLoreBoardUpdater {
     }
 
     this.highlighter = new SettlementHighlighter(this.board);
+  }
+
+  connections() {
+    let connectionElements = this.board.querySelectorAll(".path");
+    let connections = [];
+    for (let connectionElement of connectionElements) {
+      connections.push({ 
+        locationId0: parseInt(connectionElement.getAttribute("locationid0")),
+        locationId1: parseInt(connectionElement.getAttribute("locationid1"))
+      });
+    }
+    return connections;
   }
 
   updateLocations(locations) {
@@ -683,7 +697,10 @@ class AncientLoreModel extends LogEventConsumer {
   setupLocations(options, units) {
     // Create the correct number of locations.
     for (let i = 0; i < options.numLocations; i++) {
-      this.locations.push({players: []});
+      this.locations.push({
+        id: i, 
+        players: []
+      });
     }
 
     // Set the units per player for each location to 0.
@@ -697,6 +714,22 @@ class AncientLoreModel extends LogEventConsumer {
     units.forEach(unit => {
       ++this.locations[unit.locationId].players[unit.playerId].numUnits;
     });
+  }
+
+  setupConnections(connections) {
+    for (let from of this.locations) {
+      from.isConnectedTo = [];
+      for (let to of this.locations) {
+        from.isConnectedTo[to.id] = false;
+      }
+    }
+
+    for (let connection of connections) {
+      let id0 = connection.locationId0;
+      let id1 = connection.locationId1;
+      this.locations[id0].isConnectedTo[id1] = true;
+      this.locations[id1].isConnectedTo[id0] = true;
+    }
   }
 
   beginRound() {
@@ -879,10 +912,10 @@ class AncientLoreEventGenerator {
     this.eventLog.add(startGameEvent);
   }
 
-  onStartGame(players) {
+  onStartGame(players, myPlayerName) {
     this.gameSetup.hideGameSetupOptions();
     this.myPlayerId = players.findIndex((a) => {
-      return a.peerId == this.eventLog.swarm.myId;
+      return a.name == myPlayerName;
     });
   }
 
@@ -949,49 +982,68 @@ class AncientLoreEventGenerator {
       return; 
     }
 
-    /** 
-     * +/- on all other locations with the player's units.
-     * +/- on the player's supply.
-     * Send a move units action when done.
-     */
+    // Regroup is only allowed in locations where the player has a unit.
+    let isMoveToAllowedFn = (location) => {
+      return location.players[this.myPlayerId].numUnits > 0;
+    }
+
+    let isMoveFromAllowedFn = (location) => {
+      return true;
+    }
+
+    this.offerToMoveUnits(turn, locations, isMoveFromAllowedFn, isMoveToAllowedFn);
+  }
+
+  beginMove(turn, locations) {
+    if (this.myPlayerId != turn.playerId) { 
+      this.clearSelectionOptions();
+      return; 
+    }
+
+    // Regroup is only allowed in locations where the player has a unit.
+    let isMoveToAllowedFn = (location) => {
+      return true;
+    }
+
+    let isMoveFromAllowedFn = (location) => {
+      return location.isConnectedTo[turn.locationId];
+    }
+
+    this.offerToMoveUnits(turn, locations, isMoveFromAllowedFn, isMoveToAllowedFn);
+  }
+
+  offerToMoveUnits(turn, locations, isMoveFromAllowedFn, isMoveToAllowedFn) {
     let numUnitsFromSettlements = new Map();
+    let onDoneFn = () => {
+      this.moveUnits(turn.locationId, numUnitsFromSettlements);
+    }
+
+    // Refuse if the target location is not allowed.
+    if (!isMoveToAllowedFn(locations[turn.locationId])) {
+      onDoneFn();
+      return;
+    }
 
     let onInputChanged = (locationId, newValue) => {
       numUnitsFromSettlements.set(locationId, newValue)
     }
-    this.input.startRegroupSelection(
+    this.input.startMoveSelection(
       turn.locationId, 
-      this.maxUnitsPerSettlement(locations),
+      this.maxUnitsPerSettlement(locations, isMoveFromAllowedFn),
       onInputChanged
     );
     
-    let onDoneFn = () => {
-      this.moveUnits(turn.locationId, numUnitsFromSettlements);
-    }
     this.input.showReadyOption(onDoneFn);
   }
 
-  offerToMoveUnits(locations) {
-    if (this.myPlayerId < 0) { return; }
-
-    let toSettlementId;
-    this.input.startSelectingASettlement((selectedSettlementId) => {
-      toSettlementId = selectedSettlementId;
-
-      this.input.startSelectingUnitsToMove(
-        toSettlementId, 
-        this.maxUnitsPerSettlement(locations),
-        (numUnitsFromSettlements) => {
-          this.moveUnits(toSettlementId, numUnitsFromSettlements)
-        }
-      );
-    });
-  }
-
-  maxUnitsPerSettlement(locations) {
+  maxUnitsPerSettlement(locations, isMoveFromAllowedFn) {
     let maxUnitsPerSettlement = [];
     for (let location of locations) {
-      maxUnitsPerSettlement.push(location.players[this.myPlayerId].numUnits);
+      if (isMoveFromAllowedFn(location)) {
+        maxUnitsPerSettlement.push(location.players[this.myPlayerId].numUnits);
+      } else {
+        maxUnitsPerSettlement.push(0);
+      }
     }
     return maxUnitsPerSettlement;
   }
@@ -1118,6 +1170,9 @@ class AncientLoreInputCollector {
     });
   }
 
+  onBoardLoaded() {
+    this.settlementSelection.onBoardLoaded();
+  }
 
   startCountdown(timeInMs, onDoneFn) {
     this.countdown = new Countdown(timeInMs, 101, this.overlay);
@@ -1159,7 +1214,7 @@ class AncientLoreInputCollector {
     this.settlementSelection.start(onLocationSelected);
   }
 
-  startRegroupSelection(
+  startMoveSelection(
     toLocationId, 
     maxUnitsPerSettlement,
     onInputChanged
@@ -1172,18 +1227,6 @@ class AncientLoreInputCollector {
      */
     this.unitsToMoveSelection.start(
       toLocationId, maxUnitsPerSettlement, onInputChanged
-    );
-  }
-
-  startSelectingUnitsToMove(toSettlementId, maxUnitsPerSettlement, sendTo) {
-    this.cancelOngoingSelection();
-
-    let onFinishFn = (numFromSettlements) => { 
-      this.settlementSelection.updateHighlight(-1); 
-      sendTo(numFromSettlements);
-    };
-    this.unitsToMoveSelection.start(
-      toSettlementId, maxUnitsPerSettlement, onFinishFn
     );
   }
 
@@ -1276,12 +1319,15 @@ class SettlementSelection {
     this.onLocationSelected;
   }
 
-  start(onLocationSelected) {
-    this.selectedId = -1;
-    this.onLocationSelected = onLocationSelected;
+  onBoardLoaded() {
     if (!this.highlighter) {
       this.highlighter = new SettlementHighlighter(this.board);
     }
+  }
+
+  start(onLocationSelected) {
+    this.selectedId = -1;
+    this.onLocationSelected = onLocationSelected;
 
     let numSettlements = this.board.querySelectorAll(".settlement").length;
     for (let i = 0; i < numSettlements; i++) {
@@ -1328,7 +1374,7 @@ class SettlementHighlighter {
 
   update(settlementId, colour) {
     for (let highlight of this.highlights) {
-      if (highlight.matches(".settlement" + settlementId)) {
+      if (highlight.closest(".settlement" + settlementId)) {
         highlight.style.visibility = "visible";
         highlight.style.stroke = colour;
       } else {
@@ -1353,27 +1399,27 @@ class UnitsToMoveSelection {
   }
 
   initInputs() {
-    const names = this.board.querySelectorAll(".name"); 
+    const names = this.board.querySelectorAll(".settlement .name"); 
 
     for (let i = 0; i < names.length; ++i) {
       const name = this.board.querySelector(".settlement" + i + " .name");
       let parent = name.parentElement;
 
-      const x = name.x.baseVal[0].value;
-      const y = (name.y.baseVal[0].value - 20);
+      const x = Math.round(name.x.baseVal[0].value - 40);
+      const y = Math.round(name.y.baseVal[0].value - 77);
 
       let group = document.createElementNS("http://www.w3.org/2000/svg", "g");
       // let m = new DOMMatrix([0.4,0,0,0.4,x,y]);
       let m = document.createElementNS("http://www.w3.org/2000/svg", "svg").createSVGMatrix();
-      m.a = 0.4; m.b = 0; m.c = 0;  m.d = 0.4;
+      m.a = 1; m.b = 0; m.c = 0;  m.d = 1;
       m.e = x; m.f = y;
       group.transform.baseVal.initialize(
         group.transform.baseVal.createSVGTransformFromMatrix(m)
       );
 
       let foreignObject = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
-      foreignObject.style.width = "3em";
-      foreignObject.style.height = "2.5em";
+      foreignObject.style.width = "3.5em";
+      foreignObject.style.height = "3em";
 
       let input = document.createElement("input");
       input.type = "number";
