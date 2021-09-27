@@ -59,3 +59,27 @@ input.location-units {
   flex-direction: row;
   justify-content: center;
 }
+
+.offer-button, .accept-button {
+  border-style: outset;
+  background-color: #eee;
+}
+
+.offer-button.selected {
+  color: #aaa;
+  border-style: inset;
+}
+
+span.offered, span.otherAlly {
+  color: #555;
+}
+
+span.leadAlly {
+  font-weight: bold;
+}
+
+td.alliance {
+  border-left: 3px solid #888;
+  padding-left: 6px;
+  margin-left: 6px;
+}

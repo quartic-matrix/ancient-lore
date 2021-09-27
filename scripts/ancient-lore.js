@@ -173,6 +173,76 @@ class MoveUnitsEvent extends LogEvent {
   }
 }
 
+class OfferAllianceEvent extends LogEvent {
+  
+  static type() {
+    return "ancient-lore-offer-alliance";
+  }
+
+  static makeFromData(objectFromData) {
+    return new OfferAllianceEvent(
+      objectFromData.timestamp, 
+      objectFromData.peerId, 
+      objectFromData.playerId, 
+      objectFromData.toPlayerId
+    );
+  }
+
+  static makeNow(timestampOffset, peerId, playerId, toPlayerId) {
+    return new OfferAllianceEvent(
+      LogEvent.makeTimestamp(timestampOffset),
+      peerId,
+      playerId, 
+      toPlayerId
+    );
+  }
+
+  constructor(timestamp, peerId, playerId, toPlayerId) {
+    super(timestamp, peerId, OfferAllianceEvent.type());
+    this.playerId = playerId;
+    this.toPlayerId = toPlayerId;
+  }
+
+  notify(eventListener) {
+    eventListener.onOfferAlliance(this.playerId, this.toPlayerId);
+  }
+}
+
+class AcceptAllianceEvent extends LogEvent {
+  
+  static type() {
+    return "ancient-lore-accept-alliance";
+  }
+
+  static makeFromData(objectFromData) {
+    return new AcceptAllianceEvent(
+      objectFromData.timestamp, 
+      objectFromData.peerId, 
+      objectFromData.playerId, 
+      objectFromData.withPlayerId
+    );
+  }
+
+  static makeNow(timestampOffset, peerId, playerId, withPlayerId) {
+    return new AcceptAllianceEvent(
+      LogEvent.makeTimestamp(timestampOffset),
+      peerId,
+      playerId, 
+      withPlayerId
+    );
+  }
+
+  constructor(timestamp, peerId, playerId, withPlayerId) {
+    super(timestamp, peerId, AcceptAllianceEvent.type());
+    this.playerId = playerId;
+    this.withPlayerId = withPlayerId;
+  }
+
+  notify(eventListener) {
+    eventListener.onAcceptAlliance(this.playerId, this.withPlayerId);
+  }
+}
+
 class AncientLorePhase {
   constructor() {
     this.gamePhase = "";
@@ -180,7 +250,8 @@ class AncientLorePhase {
     this.roundPhase = "";
     this.turnI = -1;
     this.inExtraTime = false;
-    // Remember to update copyFrom and isEqual.
+    this.allianceI = -1;
+    // Remember to update copyFrom, isEqual and reset.
   }
 
   copyFrom(other) {
@@ -189,6 +260,7 @@ class AncientLorePhase {
     this.roundPhase = other.roundPhase;
     this.turnI = other.turnI;
     this.inExtraTime = other.inExtraTime;
+    this.allianceI = other.allianceI;
   }
 
   isEqual(other) {
@@ -197,7 +269,8 @@ class AncientLorePhase {
       this.roundI == other.roundI &&
       this.roundPhase == other.roundPhase &&
       this.turnI == other.turnI &&
-      this.inExtraTime == other.inExtraTime
+      this.inExtraTime == other.inExtraTime &&
+      this.allianceI == other.allianceI
     );
   }
 
@@ -239,6 +312,7 @@ class AncientLorePhase {
     this.roundPhase = "";
     this.turnI = -1;
     this.inExtraTime = false;
+    this.allianceI = -1;
   }
 
   beginRound() {
@@ -247,6 +321,7 @@ class AncientLorePhase {
     this.roundPhase = "selecting-actions";
     this.turnI = -1;
     this.inExtraTime = false;
+    this.allianceI = -1;
   }
 
   beginExtraTime() {
@@ -257,6 +332,7 @@ class AncientLorePhase {
     this.roundPhase = "executing-actions";
     ++this.turnI;
     this.inExtraTime = false;
+    this.allianceI = -1;
   }
 
   finish() {
@@ -350,7 +426,11 @@ class AncientLoreGame extends BasicGame {
         }
 
       } else if (m.phase.isExecutingActions()) {
-        this.progressTurn(m, m.turns[m.phase.turnI]);
+        if (this.phase.turnI < m.phase.turnI) {
+          this.beginTurn(m, m.turns[m.phase.turnI]);
+        } else {
+          this.progressTurn(m, m.turns[m.phase.turnI]);
+        }
       }
 
     } else if (m.phase.isFinished()) {
@@ -363,7 +443,7 @@ class AncientLoreGame extends BasicGame {
     this.phase.copyFrom(m.phase);
   }
   
-  progressTurn(m, turn) {
+  beginTurn(m, turn) {
     /**
      * Regroup must be done where the player has a unit.
      * Proclaim must be done where the player has a keeper.
@@ -384,7 +464,7 @@ class AncientLoreGame extends BasicGame {
         break;
       }
       case 3: { // Contest
-        console.log('TODO Contest');
+        this.generator.beginContest(turn, m.locations, m.playersAllies);
         break;
       }
       case 4: { // Move
@@ -403,6 +483,11 @@ class AncientLoreGame extends BasicGame {
 
   }
 
+  progressTurn(m, turn) {
+    if (this.phase.allianceI < m.phase.allianceI) {
+      this.generator.updateAlliances(m.playersAllies);
+    }
+  }
 }
 
 class PlayerList  { 
@@ -649,7 +734,9 @@ class AncientLoreModel extends LogEventConsumer {
       StartAncientLoreEvent, 
       ActionSelectedEvent, 
       ContinueEvent, 
-      MoveUnitsEvent
+      MoveUnitsEvent,
+      OfferAllianceEvent,
+      AcceptAllianceEvent
     ]);
     this.phase = new AncientLorePhase();
     this.listeners = [];
@@ -669,6 +756,7 @@ class AncientLoreModel extends LogEventConsumer {
     this.locations = []; // Setup in setupBoard.
     this.phase.reset();
     this.turns = [];
+    this.playersAllies = [];
   }
 
   react() {
@@ -825,11 +913,45 @@ class AncientLoreModel extends LogEventConsumer {
     }
     const turn = this.turns[this.phase.turnI];
 
-    for (const player of this.players) {
+    for (let player of this.players) {
       player.isActive = false;
     }
     this.players[turn.playerId].isActive = true;
     
+    this.playersAllies = [];
+    for (let playerId = 0; playerId < this.players.length; ++playerId) {
+      this.playersAllies.push({
+        'id': playerId,
+        'name': this.players[playerId].name,
+        'inAlliance': false,
+        'allies': [],
+        'alliedTo': undefined,
+        'offer': undefined
+      });
+    }
+  }
+
+  onOfferAlliance(fromId, toId) {
+    // TODO only process this if it is an appropriate time to be forming
+    // alliances.
+    if (this.playersAllies[fromId].inAlliance) {
+      return;
+    }
+    this.playersAllies[fromId].offer = toId;
+    ++this.phase.allianceI;
+  }
+  
+  onAcceptAlliance(leadId, withId) {
+    // TODO only process this if it is an appropriate time to be forming
+    // alliances.
+    if (!this.playersAllies[withId].offer == leadId) {
+      return;
+    }
+    this.playersAllies[withId].alliedTo = leadId;
+    this.playersAllies[withId].inAlliance = true;
+    this.playersAllies[leadId].allies.push(withId);
+    this.playersAllies[leadId].inAlliance = true;
+    ++this.phase.allianceI;
   }
 
   onMoveUnits(playerId, movements) {
@@ -890,6 +1012,8 @@ class AncientLoreEventGenerator {
     this.eventLog.registerEventType(ActionSelectedEvent);
     this.eventLog.registerEventType(ContinueEvent);
     this.eventLog.registerEventType(MoveUnitsEvent);
+    this.eventLog.registerEventType(OfferAllianceEvent);
+    this.eventLog.registerEventType(AcceptAllianceEvent);
   }
 
   offerToStartGame() {
@@ -1015,7 +1139,7 @@ class AncientLoreEventGenerator {
   offerToMoveUnits(turn, locations, isMoveFromAllowedFn, isMoveToAllowedFn) {
     let numUnitsFromSettlements = new Map();
     let onDoneFn = () => {
-      this.moveUnits(turn.locationId, numUnitsFromSettlements);
+      this.sendMoveUnits(turn.locationId, numUnitsFromSettlements);
     }
 
     // Refuse if the target location is not allowed.
@@ -1048,7 +1172,7 @@ class AncientLoreEventGenerator {
     return maxUnitsPerSettlement;
   }
 
-  moveUnits(toSettlementId, numUnitsFromSettlements) {
+  sendMoveUnits(toSettlementId, numUnitsFromSettlements) {
     let movements = [];
     for (let [key, value] of numUnitsFromSettlements) {
       movements.push({fromId: key, toId: toSettlementId, numUnits: value});
@@ -1060,6 +1184,47 @@ class AncientLoreEventGenerator {
     this.eventLog.add(moveUnitsEvent);
   }
 
+  beginContest(turn, locations, playersAllies) {
+    if (this.myPlayerId < 0) { return; }
+
+    this.offerToMakeAlliances(playersAllies);
+
+    // TODO Card selection.
+    // TODO Ready button.
+    // TODO Timer and continue option.
+  }
+
+  offerToMakeAlliances(playersAllies) {
+
+    let onOfferFn = (toPlayerId) => {
+      this.sendOfferAlliance(toPlayerId);
+    };
+    let onAcceptFn = (toPlayerId) => {
+      this.sendAcceptAlliance(toPlayerId);
+    };
+
+    this.input.startAllianceSelection(
+      playersAllies, this.myPlayerId, onOfferFn, onAcceptFn
+    );
+  }
+
+  sendOfferAlliance(toPlayerId) {
+    let offerAllianceEvent = OfferAllianceEvent.makeNow(
+      0, this.eventLog.swarm.myId, this.myPlayerId, toPlayerId
+    );
+    this.eventLog.add(offerAllianceEvent);
+  }
+
+  sendAcceptAlliance(withPlayerId) {
+    let acceptAllianceEvent = AcceptAllianceEvent.makeNow(
+      0, this.eventLog.swarm.myId, this.myPlayerId, withPlayerId
+    );
+    this.eventLog.add(acceptAllianceEvent);
+  }
+
+  updateAlliances(playersAllies) {
+    this.input.updateAlliances(playersAllies);
+  }
 }
 
 class AncientLoreGameSetup {
@@ -1154,6 +1319,7 @@ class AncientLoreInputCollector {
     this.actionSelection = new ActionSelection(this.cardsArea);
     this.settlementSelection = new SettlementSelection(this.board);
     this.unitsToMoveSelection = new UnitsToMoveSelection(this.overlay, this.board);
+    this.allianceSelection = new AllianceSelection(this.overlay);
     this.countdown;
   }
 
@@ -1228,6 +1394,15 @@ class AncientLoreInputCollector {
     this.unitsToMoveSelection.start(
       toLocationId, maxUnitsPerSettlement, onInputChanged
     );
+  }
+
+  startAllianceSelection(playersAllies, myPlayerId, onOfferFn, onAcceptFn) {
+    // Alliance selection is done simultaneously with card selection.
+    this.allianceSelection.start(playersAllies, myPlayerId, onOfferFn, onAcceptFn);
+  }
+
+  updateAlliances(playersAllies) {
+    this.allianceSelection.update(playersAllies);
   }
 
   cancelOngoingSelection() {
@@ -1411,7 +1586,7 @@ class UnitsToMoveSelection {
       let group = document.createElementNS("http://www.w3.org/2000/svg", "g");
       // let m = new DOMMatrix([0.4,0,0,0.4,x,y]);
       let m = document.createElementNS("http://www.w3.org/2000/svg", "svg").createSVGMatrix();
-      m.a = 1; m.b = 0; m.c = 0;  m.d = 1;
+      m.a = 2; m.b = 0; m.c = 0;  m.d = 2;
       m.e = x; m.f = y;
       group.transform.baseVal.initialize(
         group.transform.baseVal.createSVGTransformFromMatrix(m)
@@ -1458,6 +1633,171 @@ class UnitsToMoveSelection {
     for (const input of this.inputs) {
       input.style.visibility = "hidden";
     }
+  }
+}
+class AllianceSelection {
+  constructor(overlay) {
+    this.overlay = overlay;
+    this.onOfferFn;
+    this.onAcceptFn;
+    this.myPlayerId;
+    this.table;
+  }
+
+  start(playersAllies, myPlayerId, onOfferFn, onAcceptFn) {
+    /**
+     * TODO Need to work out which players are allowed to offer/accept 
+     * alliances, and which are only allowed to offer.
+     *
+     * For now just allow all alliances to form and weed out the 
+     * invalid ones at the end.
+     * 
+     * TODO Consider requiring a 5s gap between accepting alliances, 
+     * except for last 5s.
+     */
+    /**
+     * Want to display buttons to offer an alliance to other players,
+     * these stay until my offer is accepted. Pressing a different 
+     * offer button just changes who is being offered an alliance.
+     * 
+     * Once my offer is accepted I cannot offer or accept offers.
+     * 
+     * Also need buttons to accept offers, once I have accepted an
+     * offer I cannot make offers.
+     * 
+     * Want to show which other offers have been made, and what the
+     * current alliances are.
+     */
+    this.myPlayerId = myPlayerId;
+    this.onOfferFn = onOfferFn;
+    this.onAcceptFn = onAcceptFn;
+    this.update(playersAllies);
+  }
+
+  update(playersAllies) {
+    /**
+     *  per player {
+     *    id: ;
+     *    name: ;
+     *    allies: [ids];
+     *    alliedTo: id;
+     *    offer: playerId;
+     *  }
+     * 
+     * or
+     *  per alliance {
+     *    leadPlayer: id;
+     *    otherPlayers: [ids];
+     *    offer: playerId;
+     *  }
+     */
+
+    /**
+      <table>
+        <tbody>
+          <tr>
+            <td><p>Andrew</p></td>
+            <td></td>
+            <td></td>
+          </tr>
+          <tr>
+            <td><p>Tessa</p></td>
+            <td><input type="button" value="Offer"></td>
+            <td><p>Amos</p></td>
+          </tr>
+          <tr>
+            <td><p>Miriam</p></td>
+            <td><input type="button" value="Offer"></td>
+            <td><input type="button" value="Accept"></td>
+          </tr>
+          <tr>
+            <td><p>Amos</p></td>
+            <td><input type="button" value="Offer"></td>
+            <td><p>Miriam</p></td>
+          </tr>
+        </tbody>
+      </table>
+    */
+    let players = playersAllies;
+
+    if (this.table) {
+      this.table.remove();
+    }
+    this.table = document.createElement("table");
+    let tableBody = document.createElement("tbody");
+    
+    let me = players[this.myPlayerId];
+
+    let canAccept = me.alliedTo === undefined;
+
+    for (let player of players) {
+      if (player.alliedTo !== undefined) {
+        continue;
+      }
+
+      let tableRow = document.createElement("tr"); 
+      let nameCell = document.createElement("td"); 
+      nameCell.classList.add("alliance");
+      let nameP = document.createElement("span");
+      nameP.classList.add("leadAlly");
+      nameP.innerHTML = player.name;
+      nameCell.appendChild(nameP);
+      for (let ally of player.allies) {
+        nameCell.appendChild(document.createElement("br"));
+        let allyP = document.createElement("span");
+        allyP.classList.add("otherAlly");
+        allyP.innerHTML = players[ally].name;
+        nameCell.appendChild(allyP);
+      }
+
+      let offerCell = document.createElement("td");  
+      if (player.id != me.id && !me.inAlliance) {
+        let input = document.createElement("input");
+        input.type = "button";
+        input.value = "Offer";
+        input.classList.add("offer-button");
+        if (me.offer == player.id) {
+          input.classList.add("selected");
+        }
+        input.addEventListener("click", (event) => {
+          let wasSelected = event.target.classList.contains("selected");
+          if (wasSelected) {
+            this.onOfferFn(undefined);
+          } else {
+            this.onOfferFn(player.id);
+          }
+        });
+        offerCell.appendChild(input);
+      }
+
+      let acceptCell = document.createElement("td");
+      if (canAccept && player.offer == me.id) {
+        let input = document.createElement("input");
+        input.type = "button";
+        input.value = "Accept";
+        input.classList.add("accept-button");
+        input.addEventListener("click", (event) => {
+          this.onAcceptFn(player.id);
+        });
+        acceptCell.appendChild(input);
+      } else if (player.offer !== undefined) {
+        let nameP = document.createElement("span");
+        nameP.classList.add("offered");
+        nameP.innerHTML = players[player.offer].name;
+        acceptCell.appendChild(nameP);
+      }
+
+      tableRow.appendChild(nameCell);
+      tableRow.appendChild(offerCell);
+      tableRow.appendChild(acceptCell);
+      if (player.id == me.id) {
+        tableBody.insertBefore(tableRow, tableBody.firstChild);
+      } else {
+        tableBody.appendChild(tableRow);
+      }
+    }
+    this.table.appendChild(tableBody);
+    this.overlay.appendChild(this.table);
   }
 }
 
