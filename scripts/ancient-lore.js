@@ -243,6 +243,51 @@ class AcceptAllianceEvent extends LogEvent {
   }
 }
 
+class ConflictCardSelectionEvent extends LogEvent {
+  
+  static type() {
+    return "ancient-lore-conflict-card-selection";
+  }
+
+  static makeFromData(objectFromData) {
+    return new ConflictCardSelectionEvent(
+      objectFromData.timestamp, 
+      objectFromData.peerId, 
+      objectFromData.playerId, 
+      objectFromData.cards,
+      objectFromData.isReady,
+      objectFromData.isTimeOver
+    );
+  }
+
+  static makeNow(
+    timestampOffset, peerId, playerId, cards, isReady, isTimeOver
+  ) {
+    return new ConflictCardSelectionEvent(
+      LogEvent.makeTimestamp(timestampOffset),
+      peerId,
+      playerId, 
+      cards,
+      isReady,
+      isTimeOver
+    );
+  }
+
+  constructor(timestamp, peerId, playerId, cards, isReady, isTimeOver) {
+    super(timestamp, peerId, ConflictCardSelectionEvent.type());
+    this.playerId = playerId;
+    this.cards = cards;
+    this.isReady = isReady;
+    this.isTimeOver = isTimeOver;
+  }
+
+  notify(eventListener) {
+    eventListener.onConflictCardSelection(
+      this.playerId, this.cards, this.isReady, this.isTimeOver
+    );
+  }
+}
+
 class AncientLorePhase {
   constructor() {
     this.gamePhase = "";
@@ -421,8 +466,6 @@ class AncientLoreGame extends BasicGame {
       if (m.phase.isSelectingActions()) {
         if (!m.phase.isInExtraTime()) {
           this.generator.askForActionSelection();
-        } else {
-          this.generator.offerToContinueRegardless();
         }
 
       } else if (m.phase.isExecutingActions()) {
@@ -431,6 +474,10 @@ class AncientLoreGame extends BasicGame {
         } else {
           this.progressTurn(m, m.turns[m.phase.turnI]);
         }
+      }
+
+      if (m.phase.isInExtraTime()) {
+        this.generator.offerToContinueRegardless();
       }
 
     } else if (m.phase.isFinished()) {
@@ -453,6 +500,8 @@ class AncientLoreGame extends BasicGame {
      */
     console.log('TODO Skip turn if location is unsuitable for action');
 
+    // Clear any selections left over from the previous turn.
+    this.generator.clearSelectionOptions();
     this.board.updateHighlight(turn.locationId);
     switch (turn.actionI) {
       case 1: { // Regroup
@@ -736,7 +785,8 @@ class AncientLoreModel extends LogEventConsumer {
       ContinueEvent, 
       MoveUnitsEvent,
       OfferAllianceEvent,
-      AcceptAllianceEvent
+      AcceptAllianceEvent,
+      ConflictCardSelectionEvent
     ]);
     this.phase = new AncientLorePhase();
     this.listeners = [];
@@ -867,9 +917,17 @@ class AncientLoreModel extends LogEventConsumer {
   }
 
   onContinue(playerId) {
-    if (this.phase.isSelectingActions() && this.phase.isInExtraTime()) {
+    if (!this.phase.isInExtraTime()) {
+      return;
+    }
+    if (this.phase.isSelectingActions()) {
       // Some players have an undefined action/locationId.
       this.beginExecutingActions();
+    } else if (this.phase.isExecutingActions()) {      
+      const turn = this.turns[this.phase.turnI];
+      if (turn.action == "contest" || turn.action == "invade") {
+        this.resolveConflict();
+      }
     }
   }
 
@@ -915,6 +973,9 @@ class AncientLoreModel extends LogEventConsumer {
 
     for (let player of this.players) {
       player.isActive = false;
+      player.isReady = false;
+      player.isTimeOver = false;
+      player.cards = [];
     }
     this.players[turn.playerId].isActive = true;
     
@@ -952,6 +1013,35 @@ class AncientLoreModel extends LogEventConsumer {
     this.playersAllies[leadId].allies.push(withId);
     this.playersAllies[leadId].inAlliance = true;
     ++this.phase.allianceI;
+  }
+
+  onConflictCardSelection(playerId, cards, isReady, isTimeOver) {
+    this.players[playerId].cards = cards;
+    this.players[playerId].isReady = isReady;
+    this.players[playerId].isTimeOver = isTimeOver;
+
+    let isEveryoneReady = true;
+    let isTimeOverForEveryone = true;
+    for (let player of this.players) {
+      if (!player.isReady) {
+        isEveryoneReady = false;
+      }
+      if (!player.isTimeOver) {
+        isTimeOverForEveryone = false;
+      }
+    }
+
+    if (isEveryoneReady) {
+      this.resolveConflict();
+    } else if (isTimeOverForEveryone) {
+      this.phase.beginExtraTime();
+    }
+  }
+
+  resolveConflict() {
+    console.log('TODO Resolve conflict');
+    
+    this.beginTurn();
   }
 
   onMoveUnits(playerId, movements) {
@@ -1014,6 +1104,7 @@ class AncientLoreEventGenerator {
     this.eventLog.registerEventType(MoveUnitsEvent);
     this.eventLog.registerEventType(OfferAllianceEvent);
     this.eventLog.registerEventType(AcceptAllianceEvent);
+    this.eventLog.registerEventType(ConflictCardSelectionEvent);
   }
 
   offerToStartGame() {
@@ -1189,9 +1280,34 @@ class AncientLoreEventGenerator {
 
     this.offerToMakeAlliances(playersAllies);
 
-    // TODO Card selection.
-    // TODO Ready button.
-    // TODO Timer and continue option.
+    let isReady = false;
+    let isTimeOver = false;
+    let cards = [];
+    let onConflictCardSelectionChangedFn = (cardSelection) => {
+      cards = cardSelection;
+      this.sendConflictCardSelection(cards, isReady, isTimeOver);
+    };
+    this.input.startConflictCardSelection(onConflictCardSelectionChangedFn);
+
+    this.input.showReadyOption(() => {
+      isReady = true;
+      this.sendConflictCardSelection(cards, isReady, isTimeOver);
+    });
+
+    // The continue option will appear once everyone has sent a 
+    // ConflictCardSelectionEvent with isTimeOver == true.
+    this.input.startCountdown(10000, () => { // TODO 30000
+      isTimeOver = true;
+      this.sendConflictCardSelection(cards, isReady, isTimeOver);
+    });
+  }
+
+  sendConflictCardSelection(cards, isReady, isTimeOver) {
+    console.log('TODO Send card selection.');
+    let conflictCardSelectionEvent = ConflictCardSelectionEvent.makeNow(
+      0, this.eventLog.swarm.myId, this.myPlayerId, cards, isReady, isTimeOver
+    );
+    this.eventLog.add(conflictCardSelectionEvent);
   }
 
   offerToMakeAlliances(playersAllies) {
@@ -1320,6 +1436,7 @@ class AncientLoreInputCollector {
     this.settlementSelection = new SettlementSelection(this.board);
     this.unitsToMoveSelection = new UnitsToMoveSelection(this.overlay, this.board);
     this.allianceSelection = new AllianceSelection(this.overlay);
+    this.conflictCardSelection = new ConflictCardSelection(this.cardsArea);
     this.countdown;
   }
 
@@ -1396,6 +1513,10 @@ class AncientLoreInputCollector {
     );
   }
 
+  startConflictCardSelection(onConflictCardSelectionChangedFn) {
+    this.conflictCardSelection.start(onConflictCardSelectionChangedFn);
+  }
+
   startAllianceSelection(playersAllies, myPlayerId, onOfferFn, onAcceptFn) {
     // Alliance selection is done simultaneously with card selection.
     this.allianceSelection.start(playersAllies, myPlayerId, onOfferFn, onAcceptFn);
@@ -1417,6 +1538,7 @@ class AncientLoreInputCollector {
     this.actionSelection.cancel();
     this.settlementSelection.cancel();
     this.unitsToMoveSelection.cancel();
+    this.conflictCardSelection.cancel();
     
     if (this.countdown) {
       this.countdown.cancel();
@@ -1424,40 +1546,38 @@ class AncientLoreInputCollector {
   }
 }
 
-class ActionSelection {
+class CardSelection {
   constructor(cardsArea) {
     this.cardsArea = cardsArea;
-    this.initCardElements();
-    this.onActionSelected;
-  }
-
-  initCardElements() {
     this.cards = [];
-    this.initCardElement("regroup", regroupCardHtml.trim());
-    this.initCardElement("proclaim", proclaimCardHtml.trim());
-    this.initCardElement("contest", contestCardHtml.trim());
-    this.initCardElement("move", moveCardHtml.trim());
-    this.initCardElement("invade", invadeCardHtml.trim());
+
+    if (!typeof this.onSelected === "function") {
+      throw new TypeError("Must override onSelected(cardId)");
+    }
   }
 
   deselectAll() {
     for (let c of this.cards) {
-      c.querySelector(".border").style.stroke = "#6d0000"; 
-      c.style.paddingTop = "1%";
-      c.style.paddingBottom = "0%";
+      this.deselect(c);
     }
   }
 
-  initCardElement(gameAction, html) {
+  deselect(card) {
+    card.querySelector(".border").style.stroke = "#6d0000"; 
+    card.style.paddingTop = "1%";
+    card.style.paddingBottom = "0%";
+  }
+
+  select(card) {
+    card.querySelector(".border").style.stroke = "#ff0000";
+    card.style.paddingTop = "0%";
+    card.style.paddingBottom = "1%";
+  }
+
+  initCardElement(cardId, html) {
     let card = document.createElement("div");
     card.addEventListener("click", () => {
-      this.deselectAll();
-      card.querySelector(".border").style.stroke = "#ff0000";
-      card.style.paddingTop = "0%";
-      card.style.paddingBottom = "1%";
-      if (this.onActionSelected) {
-        this.onActionSelected(gameAction);
-      }
+      this.onSelected(card, cardId);
     });
     card.className = "action card";
     card.innerHTML = html;
@@ -1468,20 +1588,101 @@ class ActionSelection {
     this.cardsArea.appendChild(card);
   }
 
-  start(onActionSelected) {
-    this.onActionSelected = onActionSelected;
-
+  showAll() {
     for (let card of this.cards) {
       card.style.display = "block";
     }
   }
 
-  cancel() {
-    this.onActionSelected = undefined;
+  hideAll() {
     for (let card of this.cards) {
       card.style.display = "none";
     }
+  }
+}
+
+class ConflictCardSelection extends CardSelection {
+  constructor(cardsArea) {
+    super(cardsArea);
+    this.initCardElements();
+    this.cardSelection = [];
+    this.onConflictCardSelected;
+  }
+
+  initCardElements() {
+    this.initCardElement("0-card", number0CardHtml.trim());
+    this.initCardElement("1-card", number1CardHtml.trim());
+    this.initCardElement("2-card", number2CardHtml.trim());
+    this.initCardElement("3-card", number3CardHtml.trim());
+    this.initCardElement("4-card", number4CardHtml.trim());
+    this.initCardElement("5-card", number5CardHtml.trim());
+    this.initCardElement("6-card", number6CardHtml.trim());
+    this.initCardElement("7-card", number7CardHtml.trim());
+
+    this.initCardElement("convert", convertCardHtml.trim());
+    this.initCardElement("plus2", plus2CardHtml.trim());
+  }
+
+  start(onConflictCardSelected) {
+    this.cardSelection = [];
+    this.onConflictCardSelected = onConflictCardSelected;
+    this.showAll();
+  }
+
+  cancel() {
+    this.onConflictCardSelected = undefined;
+    this.hideAll();
     this.deselectAll();
+  }
+
+  onSelected(card, cardId) {
+    const index = this.cardSelection.indexOf(cardId);
+    if (index > -1) {
+      this.cardSelection.splice(index, 1);
+      this.deselect(card);
+    } else {
+      this.cardSelection.push(cardId);
+      this.select(card);
+    }
+
+    if (this.onConflictCardSelected) {
+      this.onConflictCardSelected(this.cardSelection);
+    }
+  }
+}
+
+class ActionSelection extends CardSelection {
+  constructor(cardsArea) {
+    super(cardsArea);
+    this.initCardElements();
+    this.onActionSelected;
+  }
+
+  initCardElements() {
+    this.initCardElement("regroup", regroupCardHtml.trim());
+    this.initCardElement("proclaim", proclaimCardHtml.trim());
+    this.initCardElement("contest", contestCardHtml.trim());
+    this.initCardElement("move", moveCardHtml.trim());
+    this.initCardElement("invade", invadeCardHtml.trim());
+  }
+
+  start(onActionSelected) {
+    this.onActionSelected = onActionSelected;
+    this.showAll();
+  }
+
+  cancel() {
+    this.onActionSelected = undefined;
+    this.hideAll();
+    this.deselectAll();
+  }
+
+  onSelected(card, gameAction) {
+    this.deselectAll();
+    this.select(card);
+    if (this.onActionSelected) {
+      this.onActionSelected(gameAction);
+    }
   }
 }
 
@@ -1727,6 +1928,14 @@ class AllianceSelection {
     let tableBody = document.createElement("tbody");
     
     let me = players[this.myPlayerId];
+    if (me === undefined) {
+      // I'm just an observer.
+      me = {
+        'id': -1,
+        'inAlliance': true,
+        'offer': undefined
+      }
+    }
 
     let canAccept = me.alliedTo === undefined;
 
