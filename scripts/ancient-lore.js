@@ -35,7 +35,7 @@ class StartAncientLoreEvent extends LogEvent {
       objectFromData.timestamp,
       objectFromData.peerId,
       objectFromData.options, 
-      objectFromData.units
+      objectFromData.board
     );
   }
 
@@ -53,21 +53,22 @@ class StartAncientLoreEvent extends LogEvent {
     // Load the board and extract the number of locations and the connections
     // between them.
     let div = document.createElement("div");
-    tempHtmlBoard = new AncientLoreBoardUpdater(div);
+    let tempHtmlBoard = new AncientLoreBoardUpdater(div);
     tempHtmlBoard.loadBoard(options);
-    
+    let numLocations = tempHtmlBoard.locations.length;
+
     // Distribute the units.
     const numStartingUnitsPerPlayer = 8;
     let units = [];
     for (let playerId = 0; playerId < options.players.length; ++playerId) {
       for (let unitI = 0; unitI < numStartingUnitsPerPlayer; ++unitI) {
-        let locationId = Math.floor(Math.random() * (options.numLocations-1))+1;
+        let locationId = Math.floor(Math.random() * (numLocations-1))+1;
         units.push({locationId: locationId, playerId: playerId});
       }
     }
     
     let board = {
-      numLocations: tempHtmlBoard.locations.length,
+      numLocations: numLocations,
       connections: tempHtmlBoard.connections(),
       units: units
     };
@@ -654,8 +655,8 @@ class AncientLoreBoardUpdater {
       this.board.innerHTML = board5Html.trim();
     }
 
-    locationElements = this.board.querySelectorAll(".settlement");
-    numLocations = locationElements.length;
+    let locationElements = this.board.querySelectorAll(".settlement");
+    let numLocations = locationElements.length;
 
     this.locations = [];
     for (let locationId = 0; locationId < numLocations; locationId++) {
@@ -878,7 +879,7 @@ class AncientLoreModel extends LogEventConsumer {
       ++this.locations[unit.locationId].players[unit.playerId].numUnits;
     });
 
-    setupConnections(board.connections);
+    this.setupConnections(board.connections);
   }
 
   setupConnections(connections) {
