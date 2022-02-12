@@ -46,7 +46,7 @@ class StartAncientLoreEvent extends LogEvent {
     
     for (let playerId = 0; playerId < options.players.length; ++playerId) {
       for (let unitI = 0; unitI < numStartingUnitsPerPlayer; ++unitI) {
-        let locationId = Math.floor(Math.random() * options.numLocations);
+        let locationId = Math.floor(Math.random() * (options.numLocations-1))+1;
         units.push({locationId: locationId, playerId: playerId});
       }
     }
@@ -551,7 +551,8 @@ class PlayerList  {
   update(peers, players, displayOthersActions) {
     this.playerListElement.innerHTML = "";
 
-    for (const player of players) {
+    for (let rank = 0; rank < players.length; ++rank) {
+      let player = players.find((p) => { return p.rank == rank; });
       this.display(player.name, player, displayOthersActions);
     }
 
@@ -628,7 +629,7 @@ class AncientLoreBoardUpdater {
   loadBoard(options) {
     if (options.numLocations == 3) {
       this.board.innerHTML = board3Html.trim();
-    } else if (options.numLocations == 5) {
+    } else if (options.numLocations == 6) {
       this.board.innerHTML = board5Html.trim();
     }
 
@@ -975,7 +976,7 @@ class AncientLoreModel extends LogEventConsumer {
       player.isActive = false;
       player.isReady = false;
       player.isTimeOver = false;
-      player.cards = [];
+      player.cardSelection = [];
     }
     this.players[turn.playerId].isActive = true;
     
@@ -1016,7 +1017,7 @@ class AncientLoreModel extends LogEventConsumer {
   }
 
   onConflictCardSelection(playerId, cards, isReady, isTimeOver) {
-    this.players[playerId].cards = cards;
+    this.players[playerId].cardSelection = cards;
     this.players[playerId].isReady = isReady;
     this.players[playerId].isTimeOver = isTimeOver;
 
@@ -1040,11 +1041,82 @@ class AncientLoreModel extends LogEventConsumer {
 
   resolveConflict() {
     console.log('TODO Resolve conflict');
-    
+    /**
+     * TODO-INVADE Choose where to bring followers from.
+     * Identify the valid alliances.
+     * Select who to convert.
+     * Sum up the strength of each.
+     * Identify the strongest.
+     * TODO-INVADE Select who is chased away.
+     * TODO Chase away losers in settlement.
+     */
+    const turn = this.turns[this.phase.turnI];
+    const location = this.locations[turn.locationId];
+
+    // Must be in the settlement to contest it.
+    if (
+      turn.action == 'contest' && 
+      location.players[turn.playerId].numUnits == 0
+    ) {
+      this.beginTurn();
+      return; 
+    }
+
+    let keyPlayers = [];
+    keyPlayers.push(turn.playerId);
+    for (let player of this.playersAllies) {
+      if (location.players[player.id].numUnits > 0) {
+        keyPlayers.push(player.id);
+      }
+    }
+
+    let alliances = [];
+    for (const player of this.playersAllies) {
+      if (!player.inAlliance || player.allies.length > 0) {
+        let isValid = keyPlayers.includes(player.id);
+        for (let i = 0; !isValid && i < player.allies.length; ++i) {
+          isValid = keyPlayers.includes(player.allies[i].id);
+        }
+        if (isValid) {
+          let alliance = { 'allies' : player.allies };
+          alliance.allies.push(player.id);
+          alliances.push(alliance);
+        }
+      }
+    }
+
+    // Add on fractions for tie breaker.
+    // Initiator gets (<num players> + 1)/(<num players> + 2)
+    // Others get (<num players> - <earliest position in turn order>)/(<num players> + 2)
+    for (let alliance of alliances) {
+      alliance.strength = 0;
+      let bestTieBreaker = 0;
+      let numPlayers = this.players.length;
+      for (const playerId of alliance.allies) {
+        alliance.strength += location.players[playerId].numUnits;
+        let tieBreaker = numPlayers - this.players[playerId].rank;
+        if (playerId == turn.playerId) {
+          tieBreaker = numPlayers + 1;
+        }
+        bestTieBreaker = Math.max(bestTieBreaker, tieBreaker);
+      }
+      alliance.strength += bestTieBreaker/(numPlayers + 2);
+    }
+    // Strongest is placed first.
+    alliances.sort((a, b) => { return b.strength - a.strength; });
+
     this.beginTurn();
   }
 
   onMoveUnits(playerId, movements) {
+    if (
+      !this.phase.isExecutingActions() ||
+      this.phase.turnI == -1 ||
+      this.phase.turnI >= this.turns.length
+    ) {
+      return;
+    }
+
     // Update units in each location.
     for (let movement of movements) {
       movement.numUnits = Math.max(movement.numUnits, 0);
@@ -1056,6 +1128,18 @@ class AncientLoreModel extends LogEventConsumer {
       this.locations[movement.toId].players[playerId].numUnits += movement.numUnits;
     }
     
+    const turn = this.turns[this.phase.turnI];
+    if (turn.action == 'regroup') {
+      // Reorder the turn order.
+      let activeRank = this.players[playerId].rank;
+      for (let player of this.players) {
+        if (player.rank < activeRank) {
+          ++player.rank;
+        }
+      }
+      this.players[playerId].rank = 0;
+    }
+
     this.beginTurn();
   }
 
@@ -1371,7 +1455,7 @@ class AncientLoreGameSetup {
     startGameButton.addEventListener("click", () => {
       let options = {
         players : [],
-        numLocations : 5 // TODO perhaps a board should be selected
+        numLocations : 6 // TODO perhaps a board should be selected
       };
       for (let child of this.playerSelection.children) {
         if (child.className = "player-selected" && child.checked) {

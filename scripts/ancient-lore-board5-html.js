@@ -16,8 +16,8 @@ const board5Html = `
    id="svg8"
    inkscape:version="1.0.2-2 (e86c870879, 2021-01-15)"
    sodipodi:docname="5 settlement map.svg"
-   width="1400"
-   height="1100">
+   width="700"
+   height="550">
   <defs
      id="defs2">
     <linearGradient
