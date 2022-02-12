@@ -1406,7 +1406,6 @@ class AncientLoreEventGenerator {
   }
 
   sendConflictCardSelection(cards, isReady, isTimeOver) {
-    console.log('TODO Send card selection.');
     let conflictCardSelectionEvent = ConflictCardSelectionEvent.makeNow(
       0, this.eventLog.swarm.myId, this.myPlayerId, cards, isReady, isTimeOver
     );
@@ -1666,12 +1665,14 @@ class CardSelection {
   }
 
   deselect(card) {
+    card.isSelected = false;
     card.querySelector(".border").style.stroke = "#6d0000"; 
     card.style.paddingTop = "1%";
     card.style.paddingBottom = "0%";
   }
 
   select(card) {
+    card.isSelected = true;
     card.querySelector(".border").style.stroke = "#ff0000";
     card.style.paddingTop = "0%";
     card.style.paddingBottom = "1%";
@@ -1682,7 +1683,8 @@ class CardSelection {
     card.addEventListener("click", () => {
       this.onSelected(card, cardId);
     });
-    card.className = "action card";
+    card.isSelected = false;
+    card.className = "selection card " + cardId;
     card.innerHTML = html;
     card.style.display = "none";
     card.style.position = "relative";
@@ -1723,6 +1725,9 @@ class ConflictCardSelection extends CardSelection {
     this.initCardElement("7-card", number7CardHtml.trim());
 
     this.initCardElement("convert", convertCardHtml.trim());
+    this.initCardElement("convert", convertCardHtml.trim());
+    this.initCardElement("convert", convertCardHtml.trim());
+    this.initCardElement("plus2", plus2CardHtml.trim());
     this.initCardElement("plus2", plus2CardHtml.trim());
   }
 
@@ -1739,8 +1744,8 @@ class ConflictCardSelection extends CardSelection {
   }
 
   onSelected(card, cardId) {
-    const index = this.cardSelection.indexOf(cardId);
-    if (index > -1) {
+    if (card.isSelected) {
+      const index = this.cardSelection.indexOf(cardId);
       this.cardSelection.splice(index, 1);
       this.deselect(card);
     } else {
