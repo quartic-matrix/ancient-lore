@@ -1386,11 +1386,11 @@ class AncientLoreEventGenerator {
     let isReady = false;
     let isTimeOver = false;
     let cards = [];
-    let onConflictCardSelectionChangedFn = (cardSelection) => {
+    let onConflictCardSelectedFn = (cardSelection) => {
       cards = cardSelection;
       this.sendConflictCardSelection(cards, isReady, isTimeOver);
     };
-    this.input.startConflictCardSelection(onConflictCardSelectionChangedFn);
+    this.input.startConflictCardSelection(onConflictCardSelectedFn);
 
     this.input.showReadyOption(() => {
       isReady = true;
@@ -1615,8 +1615,8 @@ class AncientLoreInputCollector {
     );
   }
 
-  startConflictCardSelection(onConflictCardSelectionChangedFn) {
-    this.conflictCardSelection.start(onConflictCardSelectionChangedFn);
+  startConflictCardSelection(onConflictCardSelectedFn) {
+    this.conflictCardSelection.start(onConflictCardSelectedFn);
   }
 
   startAllianceSelection(playersAllies, myPlayerId, onOfferFn, onAcceptFn) {
@@ -1678,19 +1678,28 @@ class CardSelection {
     card.style.paddingBottom = "1%";
   }
 
-  initCardElement(cardId, html) {
+  initCardElement(cardType, html) {
     let card = document.createElement("div");
     card.addEventListener("click", () => {
-      this.onSelected(card, cardId);
+      this.onSelected(card, cardType);
     });
+    card.cardType = cardType;
     card.isSelected = false;
-    card.className = "selection card " + cardId;
+    card.className = "selection card";
     card.innerHTML = html;
     card.style.display = "none";
     card.style.position = "relative";
     card.style.flexBasis = "10%";
     this.cards.push(card);
     this.cardsArea.appendChild(card);
+  }
+
+  removeCardElementAll(cardType) {
+    for (let card of this.cards) {
+      if (card.cardType == cardType) {
+        card.remove();
+      }
+    }
   }
 
   showAll() {
@@ -1743,13 +1752,13 @@ class ConflictCardSelection extends CardSelection {
     this.deselectAll();
   }
 
-  onSelected(card, cardId) {
+  onSelected(card, cardType) {
     if (card.isSelected) {
-      const index = this.cardSelection.indexOf(cardId);
+      const index = this.cardSelection.indexOf(cardType);
       this.cardSelection.splice(index, 1);
       this.deselect(card);
     } else {
-      this.cardSelection.push(cardId);
+      this.cardSelection.push(cardType);
       this.select(card);
     }
 
