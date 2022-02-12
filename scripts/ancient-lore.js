@@ -40,33 +40,54 @@ class StartAncientLoreEvent extends LogEvent {
   }
 
   static makeNow(timestampOffset, peerId, options) {
-    const numStartingUnitsPerPlayer = 8;
-
-    let units = [];
+    // Set the initial player order.
+    let orderedPlayers = [];
+    for (let playerId = 0; playerId < options.players.length; ++playerId) {
+      orderedPlayers.push({playerId: playerId, x: Math.random()});
+    }
+    orderedPlayers.sort((a, b) => { return a.x - b.x; });
+    for (let rank = 0; rank < orderedPlayers.length; ++rank) {
+      options.players[orderedPlayers[rank].playerId].rank = rank;
+    }
     
+    // Load the board and extract the number of locations and the connections
+    // between them.
+    let div = document.createElement("div");
+    tempHtmlBoard = new AncientLoreBoardUpdater(div);
+    tempHtmlBoard.loadBoard(options);
+    
+    // Distribute the units.
+    const numStartingUnitsPerPlayer = 8;
+    let units = [];
     for (let playerId = 0; playerId < options.players.length; ++playerId) {
       for (let unitI = 0; unitI < numStartingUnitsPerPlayer; ++unitI) {
         let locationId = Math.floor(Math.random() * (options.numLocations-1))+1;
         units.push({locationId: locationId, playerId: playerId});
       }
     }
+    
+    let board = {
+      numLocations: tempHtmlBoard.locations.length,
+      connections: tempHtmlBoard.connections(),
+      units: units
+    };
 
     return new StartAncientLoreEvent(
       LogEvent.makeTimestamp(timestampOffset),
       peerId,
       options, 
-      units
+      board
     );
   }
 
-  constructor(timestamp, peerId, options, units) {
+  constructor(timestamp, peerId, options, board) {
     super(timestamp, peerId, StartAncientLoreEvent.type());
     this.options = options;
-    this.units = units;
+    this.board = board;
   }
 
   notify(eventListener) {
-    eventListener.onStartGame(this.options, this.units);
+    eventListener.onStartGame(this.options, this.board);
   }
 }
 
@@ -412,7 +433,9 @@ class AncientLoreGame extends BasicGame {
     );
     
     // Display
-    this.board = new AncientLoreBoardUpdater(domElement);
+    this.board = new AncientLoreBoardUpdater(
+      domElement.querySelector(".board")
+    );
     this.playerList = new PlayerList(domElement, playerName, this.board);
     this.conclusionDisplay = new ConclusionDisplay(domElement);
 
@@ -441,9 +464,7 @@ class AncientLoreGame extends BasicGame {
     if (this.phase.isForming()) {
       // This was previously forming, so some setup is needed.
       this.board.loadBoard(m.options);
-      this.inputCollector.onBoardLoaded();
       this.generator.onStartGame(m.players, this.playerList.myPlayerName);
-      this.model.setupConnections(this.board.connections());
       
     } else if (
       this.phase.isSelectingActions() && 
@@ -619,22 +640,25 @@ class PlayerList  {
 }
 
 class AncientLoreBoardUpdater {
-  constructor(rootElement) {
-    this.board = rootElement.querySelector(".board");
+  constructor(boardElement) {
+    this.board = boardElement;
     this.highlighter; // Set in loadBoard.
     this.locations; // Set in loadBoard.
     this.colours = generateHslaColors(60, 30, 1.0, 6);
   }
 
   loadBoard(options) {
-    if (options.numLocations == 3) {
+    if (options.boardSelection == "basic-3-settlement") {
       this.board.innerHTML = board3Html.trim();
-    } else if (options.numLocations == 6) {
+    } else if (options.boardSelection == "basic-5-settlement") {
       this.board.innerHTML = board5Html.trim();
     }
 
+    locationElements = this.board.querySelectorAll(".settlement");
+    numLocations = locationElements.length;
+
     this.locations = [];
-    for (let locationId = 0; locationId < options.numLocations; locationId++) {
+    for (let locationId = 0; locationId < numLocations; locationId++) {
       let location = {};
 
       const nameEle = 
@@ -820,7 +844,7 @@ class AncientLoreModel extends LogEventConsumer {
     this.peers.push({playerName: asPlayerName, id: peerId});
   }
 
-  onStartGame(options, units) {
+  onStartGame(options, board) {
     if (!this.phase.isForming()) {
       return; // Only react to the first StartGameEvent received.
     }
@@ -829,13 +853,13 @@ class AncientLoreModel extends LogEventConsumer {
     for (let player of this.players) {
       player.victoryPoints = 0;
     }
-    this.setupLocations(options, units);
+    this.setupLocations(options, board);
     this.beginRound();
   }
 
-  setupLocations(options, units) {
+  setupLocations(options, board) {
     // Create the correct number of locations.
-    for (let i = 0; i < options.numLocations; i++) {
+    for (let i = 0; i < board.numLocations; i++) {
       this.locations.push({
         id: i, 
         players: []
@@ -850,9 +874,11 @@ class AncientLoreModel extends LogEventConsumer {
     });
 
     // Add the units to the appropriate locations.
-    units.forEach(unit => {
+    board.units.forEach(unit => {
       ++this.locations[unit.locationId].players[unit.playerId].numUnits;
     });
+
+    setupConnections(board.connections);
   }
 
   setupConnections(connections) {
@@ -1196,15 +1222,6 @@ class AncientLoreEventGenerator {
   }
 
   startGame(options) {
-    let orderedPlayers = [];
-    for (let playerId = 0; playerId < options.players.length; ++playerId) {
-      orderedPlayers.push({playerId: playerId, x: Math.random()});
-    }
-    orderedPlayers.sort((a, b) => { return a.x - b.x; });
-    for (let rank = 0; rank < orderedPlayers.length; ++rank) {
-      options.players[orderedPlayers[rank].playerId].rank = rank;
-    }
-
     let startGameEvent = StartAncientLoreEvent.makeNow(
       0, this.eventLog.swarm.myId, options
     );
@@ -1216,6 +1233,7 @@ class AncientLoreEventGenerator {
     this.myPlayerId = players.findIndex((a) => {
       return a.name == myPlayerName;
     });
+    this.input.onStartGame();
   }
 
   clearSelectionOptions() {
@@ -1438,7 +1456,7 @@ class AncientLoreGameSetup {
    * @param {*} sendTo(gameSetupOptions)
    *    gameSetupOptions has:
    *      options, which has:
-   *        numLocations
+   *        boardSelection
    *        players
    */
   showGameSetupOptions(sendTo) {
@@ -1455,7 +1473,7 @@ class AncientLoreGameSetup {
     startGameButton.addEventListener("click", () => {
       let options = {
         players : [],
-        numLocations : 6 // TODO perhaps a board should be selected
+        boardSelection : "basic-5-settlement"
       };
       for (let child of this.playerSelection.children) {
         if (child.className = "player-selected" && child.checked) {
@@ -1537,8 +1555,8 @@ class AncientLoreInputCollector {
     });
   }
 
-  onBoardLoaded() {
-    this.settlementSelection.onBoardLoaded();
+  onStartGame() {
+    this.settlementSelection.onStartGame();
   }
 
   startCountdown(timeInMs, onDoneFn) {
@@ -1779,7 +1797,7 @@ class SettlementSelection {
     this.onLocationSelected;
   }
 
-  onBoardLoaded() {
+  onStartGame() {
     if (!this.highlighter) {
       this.highlighter = new SettlementHighlighter(this.board);
     }
