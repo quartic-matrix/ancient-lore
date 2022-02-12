@@ -35,7 +35,7 @@ class StartAncientLoreEvent extends LogEvent {
       objectFromData.timestamp,
       objectFromData.peerId,
       objectFromData.options, 
-      objectFromData.board
+      objectFromData.boardSetup
     );
   }
 
@@ -67,7 +67,7 @@ class StartAncientLoreEvent extends LogEvent {
       }
     }
     
-    let board = {
+    let boardSetup = {
       numLocations: numLocations,
       connections: tempHtmlBoard.connections(),
       units: units
@@ -77,18 +77,18 @@ class StartAncientLoreEvent extends LogEvent {
       LogEvent.makeTimestamp(timestampOffset),
       peerId,
       options, 
-      board
+      boardSetup
     );
   }
 
-  constructor(timestamp, peerId, options, board) {
+  constructor(timestamp, peerId, options, boardSetup) {
     super(timestamp, peerId, StartAncientLoreEvent.type());
     this.options = options;
-    this.board = board;
+    this.boardSetup = boardSetup;
   }
 
   notify(eventListener) {
-    eventListener.onStartGame(this.options, this.board);
+    eventListener.onStartGame(this.options, this.boardSetup);
   }
 }
 
@@ -845,7 +845,7 @@ class AncientLoreModel extends LogEventConsumer {
     this.peers.push({playerName: asPlayerName, id: peerId});
   }
 
-  onStartGame(options, board) {
+  onStartGame(options, boardSetup) {
     if (!this.phase.isForming()) {
       return; // Only react to the first StartGameEvent received.
     }
@@ -854,13 +854,13 @@ class AncientLoreModel extends LogEventConsumer {
     for (let player of this.players) {
       player.victoryPoints = 0;
     }
-    this.setupLocations(options, board);
+    this.setupLocations(options, boardSetup);
     this.beginRound();
   }
 
-  setupLocations(options, board) {
+  setupLocations(options, boardSetup) {
     // Create the correct number of locations.
-    for (let i = 0; i < board.numLocations; i++) {
+    for (let i = 0; i < boardSetup.numLocations; i++) {
       this.locations.push({
         id: i, 
         players: []
@@ -875,11 +875,11 @@ class AncientLoreModel extends LogEventConsumer {
     });
 
     // Add the units to the appropriate locations.
-    board.units.forEach(unit => {
+    boardSetup.units.forEach(unit => {
       ++this.locations[unit.locationId].players[unit.playerId].numUnits;
     });
 
-    this.setupConnections(board.connections);
+    this.setupConnections(boardSetup.connections);
   }
 
   setupConnections(connections) {
