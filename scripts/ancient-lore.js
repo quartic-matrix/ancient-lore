@@ -581,6 +581,7 @@ class PlayerList  {
       this.display(player.name, player, displayOthersActions);
     }
 
+    // Display observers, i.e. peers that are not players.
     for (const peer of peers) {
       const player = players.find((a) => {return a.name == peer.playerName});
       if (!player) {
@@ -608,6 +609,8 @@ class PlayerList  {
         para.classList.remove("active-player");
       }
 
+      // TODO `player` no longer has `selectedAction`, need to get that from
+      // the 
       if (
         (this.myPlayerName == playerName || displayOthersActions) &&
         player.selectedAction && 
@@ -908,7 +911,7 @@ class ActionSelectionActivity extends Activity {
     
     this.playerActions = [];
     for (let player of m.players) {
-      this.playerActions.push(undefined);
+      player.selectedAction = undefined;
       player.isActive = true;
     }
     m.phase.beginRound();
@@ -931,13 +934,13 @@ class ActionSelectionActivity extends Activity {
   onActionSelected(playerId, action, locationId, m) {
     m.incrementProgress();
 
-    this.playerActions[playerId] = { action: action, locationId: locationId };
+    m.players[playerId].selectedAction = { action: action, locationId: locationId };
     m.players[playerId].isActive = action == undefined || locationId == undefined;
 
     let hasEveryoneSentSomething = true;
     let isEveryoneReady = true;
-    for (let [playerId, player] of m.players.entries()) {
-      if (this.playerActions[playerId] == undefined) {
+    for (let player of m.players) {
+      if (player.selectedAction == undefined) {
         hasEveryoneSentSomething = false;
         isEveryoneReady = false;
         break;
@@ -965,16 +968,13 @@ class ActionSelectionActivity extends Activity {
 
   beginExecutingActions(m) {
     m.incrementProgress();
-    m.activity = new ExecutingActionsActivity(m, this.playerActions);
+    m.activity = new ExecutingActionsActivity(m);
   }
 }
 
 class ExecutingActionsActivity extends Activity {
   constructor(m, playerActions) {
     super(m.progress);
-
-    this.playerActions = playerActions;
-
     
     this.beginExecutingActions(m);
   }
@@ -986,7 +986,8 @@ class ExecutingActionsActivity extends Activity {
     this.turns = [];
     m.turns = this.turns; // TODO remove m.turns.
     this.turnI = -1;
-    for (const [playerId, selectedAction] of this.playerActions.entries()) {
+    for (const [playerId, player] of m.players.entries()) {
+      const selectedAction = player.selectedAction;
       if (
         selectedAction && 
         selectedAction.action != undefined &&
