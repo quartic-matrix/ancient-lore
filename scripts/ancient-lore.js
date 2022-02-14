@@ -454,6 +454,9 @@ class AncientLoreGame extends BasicGame {
   }
 
   onModelUpdated() {
+    // TODO Use ActivityCoordinators.
+    // TODO Always give the player list and board the chance to update.
+
     const m = this.model;
     this.gameSetup.updateGameSetupOptions(m.peers);
     
@@ -802,6 +805,295 @@ class AncientLoreBoardUpdater {
   }
 }
 
+class Activity {
+  constructor(progressWhenActivityStarted) {
+    this.progressWhenActivityStarted = progressWhenActivityStarted;
+  }
+
+  // makeCoordinator() = 0
+  // type() = 0
+}
+
+
+class ActivityCoordinator {
+  constructor(progressWhenActivityStarted) {
+    this.progressWhenActivityStarted = progressWhenActivityStarted;
+  }
+
+  matches(activity) {
+    return (
+      this.progressWhenActivityStarted = activity.progressWhenActivityStarted &&
+      this.isMatchingActivity(activity)
+    );
+  }
+  
+  // isMatchingActivity(activity) = 0
+  // update(inputGenerator) = 0
+}
+
+class FormingActivity extends Activity {
+  constructor(progressWhenActivityStarted) {
+    super(progressWhenActivityStarted);
+  }
+
+  makeCoordinator() {
+    class FormingActivityCoordinator extends ActivityCoordinator {
+      constructor(progressWhenActivityStarted) {
+        super(progressWhenActivityStarted);
+      }
+
+      isMatchingActivity(activity) {
+        return activity instanceof FormingActivity;
+      }
+    }
+    return new FormingActivityCoordinator(this.progressWhenActivityStarted);
+  }
+
+  onStartGame(options, boardSetup, m) {
+    m.options = options; // TODO Consider making options a member of this.
+    m.players = options.players;
+    for (let player of m.players) {
+      player.victoryPoints = 0;
+    }
+    this.setupLocations(options, boardSetup, m);
+    m.beginRound();
+  }
+
+  setupLocations(options, boardSetup, m) {
+    // Create the correct number of locations.
+    for (let i = 0; i < boardSetup.numLocations; i++) {
+      m.locations.push({
+        id: i, 
+        players: []
+      });
+    }
+
+    // Set the units per player for each location to 0.
+    m.locations.forEach(location => {
+      for (let index = 0; index < options.players.length; index++) {
+        location.players.push({numUnits: 0});
+      }
+    });
+
+    // Add the units to the appropriate locations.
+    boardSetup.units.forEach(unit => {
+      ++m.locations[unit.locationId].players[unit.playerId].numUnits;
+    });
+
+    this.setupConnections(boardSetup.connections, m);
+  }
+
+  setupConnections(connections, m) {
+    for (let from of m.locations) {
+      from.isConnectedTo = [];
+      for (let to of m.locations) {
+        from.isConnectedTo[to.id] = false;
+      }
+    }
+
+    for (let connection of connections) {
+      let id0 = connection.locationId0;
+      let id1 = connection.locationId1;
+      m.locations[id0].isConnectedTo[id1] = true;
+      m.locations[id1].isConnectedTo[id0] = true;
+    }
+  }
+}
+
+class ActionSelectionActivity extends Activity {
+  constructor(m) {
+    super(m.progress);
+
+    this.isInExtraTime = false;
+    
+    this.playerActions = [];
+    for (let player of m.players) {
+      this.playerActions.push(undefined);
+      player.isActive = true;
+    }
+    m.phase.beginRound();
+  }
+
+  makeCoordinator() {
+    class ActionSelectionActivityCoordinator extends ActivityCoordinator {
+      constructor(progressWhenActivityStarted) {
+        super(progressWhenActivityStarted);
+      }
+
+      isMatchingActivity(activity) {
+        return activity instanceof ActionSelectionActivity;
+      }
+    }
+    return new ActionSelectionActivityCoordinator(this.progressWhenActivityStarted);
+  }
+
+
+  onActionSelected(playerId, action, locationId, m) {
+    m.incrementProgress();
+
+    this.playerActions[playerId] = { action: action, locationId: locationId };
+    m.players[playerId].isActive = action == undefined || locationId == undefined;
+
+    let hasEveryoneSentSomething = true;
+    let isEveryoneReady = true;
+    for (let [playerId, player] of m.players.entries()) {
+      if (this.playerActions[playerId] == undefined) {
+        hasEveryoneSentSomething = false;
+        isEveryoneReady = false;
+        break;
+      }
+      if (player.isActive) {
+        isEveryoneReady = false;
+        // Need to continue to check whether everyone has even sent something.
+      }
+    }
+    if (isEveryoneReady) {
+      this.beginExecutingActions(m);
+    } else if (hasEveryoneSentSomething) {
+      m.incrementProgress();
+      this.isInExtraTime = true;
+      m.phase.beginExtraTime();
+    }
+  }
+
+  onContinue(playerId, m) {
+    if (!this.isInExtraTime) return;
+    // Some players have an undefined action/locationId, otherwise the automatic
+    // progression would have kicked in.
+    this.beginExecutingActions(m);
+  }
+
+  beginExecutingActions(m) {
+    m.incrementProgress();
+    m.activity = new ExecutingActionsActivity(m, this.playerActions);
+  }
+}
+
+class ExecutingActionsActivity extends Activity {
+  constructor(m, playerActions) {
+    super(m.progress);
+
+    this.playerActions = playerActions;
+
+    
+    this.beginExecutingActions(m);
+  }
+
+  beginExecutingActions(m) {
+    const actionOrder = 
+      [undefined, "regroup", "proclaim", "contest", "move", "invade"];
+    
+    this.turns = [];
+    m.turns = this.turns; // TODO remove m.turns.
+    this.turnI = -1;
+    for (const [playerId, selectedAction] of this.playerActions.entries()) {
+      if (
+        selectedAction && 
+        selectedAction.action != undefined &&
+        selectedAction.locationId != undefined
+      ) {
+        this.turns.push({
+          playerId: playerId, 
+          actionI: actionOrder.indexOf(selectedAction.action),
+          action: selectedAction.action,
+          locationId: selectedAction.locationId,
+        });
+      }
+    }
+    
+    this.turns.sort((a, b) => {
+      const actionIDiff = a.actionI - b.actionI;
+      if (actionIDiff) {
+        return actionIDiff; 
+      } else { 
+        return m.players[a.playerId].rank - m.players[b.playerId].rank;
+      }
+    });
+
+    this.beginTurn(m);
+  }
+
+  beginTurn(m) {
+    m.incrementProgress();
+    ++this.turnI;
+    m.phase.beginTurn();
+    if (this.turnI >= this.turns.length) {
+      this.endRound(m);
+      return;
+    }
+    const turn = this.turns[this.turnI];
+
+    // TODO switch (turn.action) { case "regroup": ... }
+
+
+
+    for (let player of m.players) {
+      player.isActive = false;
+      player.isReady = false;    // isReady, isTimeOver and cardSelection should be in 
+      player.isTimeOver = false; // the child activities that this spawns.
+      player.cardSelection = [];
+    }
+    m.players[turn.playerId].isActive = true;
+    
+    m.playersAllies = []; // playersAllies should be in the conflict activity.
+    for (let playerId = 0; playerId < m.players.length; ++playerId) {
+      m.playersAllies.push({
+        'id': playerId,
+        'name': m.players[playerId].name,
+        'inAlliance': false,
+        'allies': [],
+        'alliedTo': undefined,
+        'offer': undefined
+      });
+    }
+  }
+  
+  endRound(m) {
+    for (const location of m.locations) {
+      let numUnits = [];
+      for (const player of location.players) {
+        numUnits.push(player.numUnits);
+      }
+      numUnits.sort();
+      const median = numUnits[Math.floor(numUnits.length/2)];
+      for (let playerId = 0; playerId < location.players.length; playerId++) {
+        if (location.players[playerId].numUnits >= median) {
+          ++m.players[playerId].victoryPoints;
+        }
+      } 
+    }
+    
+    let maxVps = 0;
+    for (const player of m.players) {
+      maxVps = Math.max(maxVps, player.victoryPoints);
+    }
+    for (const player of m.players) {
+      if (player.victoryPoints >= 10 && player.victoryPoints >= maxVps) {
+        m.winners.push(player.name);
+      }
+    }
+    if (m.winners.length > 0) {
+      m.incrementProgress();
+      m.phase.finish();
+    } else {
+      m.beginRound();
+    }
+  }
+}
+
+class TurnActivity extends Activity {
+  constructor(m, onFinishedFn) {
+    super(m.progress);
+    this.onFinishedFn = () => {
+      onFinishedFn(m);
+    }
+  }
+
+  endTurn() {
+    this.onFinishedFn();
+  }
+}
+
 class AncientLoreModel extends LogEventConsumer {
   constructor() {
     super([
@@ -833,6 +1125,26 @@ class AncientLoreModel extends LogEventConsumer {
     this.phase.reset();
     this.turns = [];
     this.playersAllies = [];
+
+    this.progress = 1;
+    this.activity = new FormingActivity(this.progress);
+  }
+
+  incrementProgress() {
+    ++this.progress;
+  }
+
+  beginRound() {
+    this.incrementProgress();
+    this.activity = new ActionSelectionActivity(this);
+  }
+
+  // TODO Remove, only here because movement and conflict selection/resolution
+  // have not been extracted out yet.
+  beginTurn() { 
+    if (typeof this.activity.beginTurn == 'function') {
+      this.activity.beginTurn(this);
+    }
   }
 
   react() {
@@ -842,109 +1154,29 @@ class AncientLoreModel extends LogEventConsumer {
   }
 
   onPeerJoins(asPlayerName, peerId) {
+    this.incrementProgress();
     this.peers.push({playerName: asPlayerName, id: peerId});
   }
 
   onStartGame(options, boardSetup) {
-    if (!this.phase.isForming()) {
-      return; // Only react to the first StartGameEvent received.
+    if (typeof this.activity.onStartGame == 'function') {
+      this.activity.onStartGame(options, boardSetup, this);
     }
-    this.options = options;
-    this.players = options.players;
-    for (let player of this.players) {
-      player.victoryPoints = 0;
-    }
-    this.setupLocations(options, boardSetup);
-    this.beginRound();
-  }
-
-  setupLocations(options, boardSetup) {
-    // Create the correct number of locations.
-    for (let i = 0; i < boardSetup.numLocations; i++) {
-      this.locations.push({
-        id: i, 
-        players: []
-      });
-    }
-
-    // Set the units per player for each location to 0.
-    this.locations.forEach(location => {
-      for (let index = 0; index < options.players.length; index++) {
-        location.players.push({numUnits: 0});
-      }
-    });
-
-    // Add the units to the appropriate locations.
-    boardSetup.units.forEach(unit => {
-      ++this.locations[unit.locationId].players[unit.playerId].numUnits;
-    });
-
-    this.setupConnections(boardSetup.connections);
-  }
-
-  setupConnections(connections) {
-    for (let from of this.locations) {
-      from.isConnectedTo = [];
-      for (let to of this.locations) {
-        from.isConnectedTo[to.id] = false;
-      }
-    }
-
-    for (let connection of connections) {
-      let id0 = connection.locationId0;
-      let id1 = connection.locationId1;
-      this.locations[id0].isConnectedTo[id1] = true;
-      this.locations[id1].isConnectedTo[id0] = true;
-    }
-  }
-
-  beginRound() {
-    this.turns = [];
-    for (let player of this.players) {
-      player.selectedAction = undefined;
-      player.isActive = true;
-    }
-    this.phase.beginRound();
   }
 
   onActionSelected(playerId, action, locationId) {
-    if (!this.phase.isSelectingActions()) {
-      // Ignore these events if no longer selecting actions. This could happen
-      // if a peer allows action selection and then realizes the phase is 
-      // already over.
-      return;
-    }
-
-    let fromPlayer = this.players[playerId];
-    fromPlayer.selectedAction = {
-      action: action, 
-      locationId: locationId
-    };
-    fromPlayer.isActive = 
-      fromPlayer.selectedAction.action == undefined ||
-      fromPlayer.selectedAction.locationId == undefined;
-
-    let hasEveryoneSentSomething = true;
-    let isEveryoneReady = true;
-    for (let player of this.players) {
-      if (player.selectedAction == undefined) {
-        hasEveryoneSentSomething = false;
-        isEveryoneReady = false;
-        break;
-      }
-      if (player.isActive) {
-        isEveryoneReady = false;
-        // Need to continue to check whether everyone has even sent something.
-      }
-    }
-    if (isEveryoneReady) {
-      this.beginExecutingActions();
-    } else if (hasEveryoneSentSomething) {
-      this.phase.beginExtraTime();
+    if (typeof this.activity.onActionSelected == 'function') {
+      this.activity.onActionSelected(playerId, action, locationId, this);
     }
   }
 
   onContinue(playerId) {
+    if (typeof this.activity.onContinue == 'function') {
+      this.activity.onContinue(playerId, this);
+      return;
+    }
+
+    // TODO remove the rest of this function.
     if (!this.phase.isInExtraTime()) {
       return;
     }
@@ -956,67 +1188,6 @@ class AncientLoreModel extends LogEventConsumer {
       if (turn.action == "contest" || turn.action == "invade") {
         this.resolveConflict();
       }
-    }
-  }
-
-  beginExecutingActions() {
-    const actionOrder = 
-      [undefined, "regroup", "proclaim", "contest", "move", "invade"];
-    
-    for (let playerId = 0; playerId < this.players.length; ++playerId) {
-      const selectedAction = this.players[playerId].selectedAction;
-      if (
-        selectedAction && 
-        selectedAction.action != undefined &&
-        selectedAction.locationId != undefined
-      ) {
-        this.turns.push({
-          playerId: playerId, 
-          actionI: actionOrder.indexOf(selectedAction.action),
-          action: selectedAction.action,
-          locationId: selectedAction.locationId,
-        });
-      }
-    }
-    
-    this.turns.sort((a, b) => {
-      const actionIDiff = a.actionI - b.actionI;
-      if (actionIDiff) {
-        return actionIDiff; 
-      } else { 
-        return this.players[a.playerId].rank - this.players[b.playerId].rank;
-      }
-    });
-
-    this.beginTurn();
-  }
-
-  beginTurn() {
-    this.phase.beginTurn();
-    if (this.phase.turnI >= this.turns.length) {
-      this.endRound();
-      return;
-    }
-    const turn = this.turns[this.phase.turnI];
-
-    for (let player of this.players) {
-      player.isActive = false;
-      player.isReady = false;
-      player.isTimeOver = false;
-      player.cardSelection = [];
-    }
-    this.players[turn.playerId].isActive = true;
-    
-    this.playersAllies = [];
-    for (let playerId = 0; playerId < this.players.length; ++playerId) {
-      this.playersAllies.push({
-        'id': playerId,
-        'name': this.players[playerId].name,
-        'inAlliance': false,
-        'allies': [],
-        'alliedTo': undefined,
-        'offer': undefined
-      });
     }
   }
 
@@ -1168,37 +1339,6 @@ class AncientLoreModel extends LogEventConsumer {
     }
 
     this.beginTurn();
-  }
-
-  endRound() {
-    for (const location of this.locations) {
-      let numUnits = [];
-      for (const player of location.players) {
-        numUnits.push(player.numUnits);
-      }
-      numUnits.sort();
-      const median = numUnits[Math.floor(numUnits.length/2)];
-      for (let playerId = 0; playerId < location.players.length; playerId++) {
-        if (location.players[playerId].numUnits >= median) {
-          ++this.players[playerId].victoryPoints;
-        }
-      } 
-    }
-    
-    let maxVps = 0;
-    for (const player of this.players) {
-      maxVps = Math.max(maxVps, player.victoryPoints);
-    }
-    for (const player of this.players) {
-      if (player.victoryPoints >= 10 && player.victoryPoints >= maxVps) {
-        this.winners.push(player.name);
-      }
-    }
-    if (this.winners.length > 0) {
-      this.phase.finish();
-    } else {
-      this.beginRound();
-    }
   }
 }
 
