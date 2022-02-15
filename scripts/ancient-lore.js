@@ -968,7 +968,7 @@ class ActionSelectionActivity extends Activity {
 
   beginExecutingActions(m) {
     m.incrementProgress();
-    m.activity = new ExecutingActionsActivity(m);
+    new ExecutingActionsActivity(m);
   }
 }
 
@@ -1024,9 +1024,20 @@ class ExecutingActionsActivity extends Activity {
     }
     const turn = this.turns[this.turnI];
 
-    // TODO switch (turn.action) { case "regroup": ... }
-
-
+    switch (turn.action) { 
+      case "regroup": {
+        m.activity = new RegroupTurnActivity(m, this.beginTurn.bind(this));
+        break;
+      }
+      case "move": {
+        m.activity = new MoveTurnActivity(m, this.beginTurn.bind(this));
+        break;
+      }
+      default: {
+        m.activity = this;
+        break;
+      }
+    }
 
     for (let player of m.players) {
       player.isActive = false;
@@ -1092,6 +1103,57 @@ class TurnActivity extends Activity {
 
   endTurn() {
     this.onFinishedFn();
+  }
+}
+
+class MovementTurnActivity extends TurnActivity {
+  constructor(m, onFinishedFn) {
+    super(m, onFinishedFn);
+  }
+  
+  resolveMovement(playerId, movements, m) {
+    // Update units in each location.
+    for (let movement of movements) {
+      movement.numUnits = Math.max(movement.numUnits, 0);
+      movement.numUnits = Math.min(
+        movement.numUnits,
+        m.locations[movement.fromId].players[playerId].numUnits
+      );
+      m.locations[movement.fromId].players[playerId].numUnits -= movement.numUnits;
+      m.locations[movement.toId].players[playerId].numUnits += movement.numUnits;
+    }
+  }
+}
+
+class MoveTurnActivity extends MovementTurnActivity {
+  constructor(m, onFinishedFn) {
+    super(m, onFinishedFn);
+  }
+
+  onMoveUnits(playerId, movements, m) {
+    this.resolveMovement(playerId, movements, m);
+    this.endTurn();
+  }
+}
+
+class RegroupTurnActivity extends MovementTurnActivity {
+  constructor(m, onFinishedFn) {
+    super(m, onFinishedFn);
+  }
+  
+  onMoveUnits(playerId, movements, m) {
+    this.resolveMovement(playerId, movements, m);
+    
+    // Reorder the turn order.
+    let activeRank = m.players[playerId].rank;
+    for (let player of m.players) {
+      if (player.rank < activeRank) {
+        ++player.rank;
+      }
+    }
+    m.players[playerId].rank = 0;
+
+    this.endTurn();
   }
 }
 
@@ -1189,6 +1251,13 @@ class AncientLoreModel extends LogEventConsumer {
       if (turn.action == "contest" || turn.action == "invade") {
         this.resolveConflict();
       }
+    }
+  }
+
+  
+  onMoveUnits(playerId, movements) {
+    if (typeof this.activity.onMoveUnits == 'function') {
+      this.activity.onMoveUnits(playerId, movements, this);
     }
   }
 
@@ -1303,41 +1372,6 @@ class AncientLoreModel extends LogEventConsumer {
     }
     // Strongest is placed first.
     alliances.sort((a, b) => { return b.strength - a.strength; });
-
-    this.beginTurn();
-  }
-
-  onMoveUnits(playerId, movements) {
-    if (
-      !this.phase.isExecutingActions() ||
-      this.phase.turnI == -1 ||
-      this.phase.turnI >= this.turns.length
-    ) {
-      return;
-    }
-
-    // Update units in each location.
-    for (let movement of movements) {
-      movement.numUnits = Math.max(movement.numUnits, 0);
-      movement.numUnits = Math.min(
-        movement.numUnits,
-        this.locations[movement.fromId].players[playerId].numUnits
-      );
-      this.locations[movement.fromId].players[playerId].numUnits -= movement.numUnits;
-      this.locations[movement.toId].players[playerId].numUnits += movement.numUnits;
-    }
-    
-    const turn = this.turns[this.phase.turnI];
-    if (turn.action == 'regroup') {
-      // Reorder the turn order.
-      let activeRank = this.players[playerId].rank;
-      for (let player of this.players) {
-        if (player.rank < activeRank) {
-          ++player.rank;
-        }
-      }
-      this.players[playerId].rank = 0;
-    }
 
     this.beginTurn();
   }
