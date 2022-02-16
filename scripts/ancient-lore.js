@@ -441,9 +441,10 @@ class AncientLoreGame extends BasicGame {
     this.conclusionDisplay = new ConclusionDisplay(domElement);
 
     // Internal model
-    this.model = new AncientLoreModel();
+    this.model = new AncientLoreModel(playerName);
     this.modelUpdater = new LogEventConsumerUpdater(this.model, eventLog);
 
+    this.coordinator = undefined;
     this.phase = new AncientLorePhase();
 
     this.model.addListener(this);
@@ -458,7 +459,36 @@ class AncientLoreGame extends BasicGame {
     // TODO Always give the player list and board the chance to update.
 
     const m = this.model;
-    this.gameSetup.updateGameSetupOptions(m.peers);
+
+    // TODO Once the phases have been eliminated. Start with a 
+    // dummy coordinator in the constructor, and require makeCoordinator
+    // to return something. 
+
+    // First update any existing coordinator, including ending it if 
+    // necessary. Then if there was or is now no coordinator try to create
+    // and begin a coordinator for the current activity.
+    if (this.coordinator) {
+      if (this.coordinator.matches(m.activity)) {
+        this.coordinator.updateGenerator(this.generator, m);
+      } else {
+        // TODO is there a better place for this.
+        // The board must be loaded before forming ends and the game starts.
+        this.board.loadBoard(m.options);
+        
+        this.coordinator.end(this.generator, m);
+        this.coordinator = undefined;
+      }
+    }
+    if (!this.coordinator) {
+      this.coordinator = m.activity.makeCoordinator();
+      if (this.coordinator) {
+        this.coordinator.begin(this.generator, m);
+        this.coordinator.updateGenerator(this.generator, m);
+      }
+    }
+
+
+
     
     if (this.phase.isEqual(m.phase)) {
       this.playerList.update(m.peers, m.players, m.phase.isExecutingActions());
@@ -467,21 +497,15 @@ class AncientLoreGame extends BasicGame {
     
     if (this.phase.isForming()) {
       // This was previously forming, so some setup is needed.
-      this.board.loadBoard(m.options);
-      this.generator.onStartGame(m.players, this.playerList.myPlayerName);
-      
     } else if (
       this.phase.isSelectingActions() && 
       !m.phase.isSelectingActions()
     ) {
-      // This was previously selecting an action, that needs to stop.
-      this.generator.clearSelectionOptions();
     }
     // Need to load the board prior to updating players.
     this.playerList.update(m.peers, m.players, m.phase.isExecutingActions());
       
     if (m.phase.isForming()) {
-      this.generator.offerToStartGame();
 
     } else if (m.phase.isPlaying()) {
       // Either the game was forming and is now playing, or this was already 
@@ -489,9 +513,6 @@ class AncientLoreGame extends BasicGame {
       this.board.updateLocations(m.locations);
 
       if (m.phase.isSelectingActions()) {
-        if (!m.phase.isInExtraTime()) {
-          this.generator.askForActionSelection();
-        }
 
       } else if (m.phase.isExecutingActions()) {
         if (this.phase.turnI < m.phase.turnI) {
@@ -655,6 +676,8 @@ class AncientLoreBoardUpdater {
   }
 
   loadBoard(options) {
+    if (this.locations) return;
+
     if (options.boardSelection == "basic-3-settlement") {
       this.board.innerHTML = board3Html.trim();
     } else if (options.boardSelection == "basic-5-settlement") {
@@ -813,7 +836,9 @@ class Activity {
     this.progressWhenActivityStarted = progressWhenActivityStarted;
   }
 
-  // makeCoordinator() = 0
+  makeCoordinator() {
+    return undefined; // TODO remove when all activities implement this.
+  }
   // type() = 0
 }
 
@@ -831,7 +856,9 @@ class ActivityCoordinator {
   }
   
   // isMatchingActivity(activity) = 0
-  // update(inputGenerator) = 0
+  begin(inputGenerator, m) {}
+  end(inputGenerator, m) {}
+  // updateGenerator(inputGenerator, m) = 0
 }
 
 class FormingActivity extends Activity {
@@ -847,6 +874,18 @@ class FormingActivity extends Activity {
 
       isMatchingActivity(activity) {
         return activity instanceof FormingActivity;
+      }
+
+      begin(generator, m) {
+        generator.offerToStartGame();
+      }
+
+      updateGenerator(generator, m) {
+        generator.updateGameSetupOptions(m.peers);
+      }
+
+      end(generator, m) {
+        generator.onStartGame(m.players, m.myPlayerName);
       }
     }
     return new FormingActivityCoordinator(this.progressWhenActivityStarted);
@@ -919,15 +958,33 @@ class ActionSelectionActivity extends Activity {
 
   makeCoordinator() {
     class ActionSelectionActivityCoordinator extends ActivityCoordinator {
-      constructor(progressWhenActivityStarted) {
-        super(progressWhenActivityStarted);
+      constructor(activity) {
+        super(activity.progressWhenActivityStarted);
+        this.activity = activity;
+        this.isInExtraTime = false;
       }
 
       isMatchingActivity(activity) {
         return activity instanceof ActionSelectionActivity;
       }
+
+      begin(generator, m) {
+        generator.askForActionSelection();
+      }
+
+      updateGenerator(generator, m) {
+        if (!this.isInExtraTime && this.activity.isInExtraTime) {
+          generator.offerToContinueRegardless();
+          this.isInExtraTime = true;
+        }
+      }
+
+      end(generator, m) {
+        // This was previously selecting an action, that needs to stop.
+        generator.clearSelectionOptions();
+      }
     }
-    return new ActionSelectionActivityCoordinator(this.progressWhenActivityStarted);
+    return new ActionSelectionActivityCoordinator(this);
   }
 
 
@@ -1158,7 +1215,7 @@ class RegroupTurnActivity extends MovementTurnActivity {
 }
 
 class AncientLoreModel extends LogEventConsumer {
-  constructor() {
+  constructor(playerName) {
     super([
       PeerJoinEvent, 
       StartAncientLoreEvent, 
@@ -1171,6 +1228,7 @@ class AncientLoreModel extends LogEventConsumer {
     ]);
     this.phase = new AncientLorePhase();
     this.listeners = [];
+    this.myPlayerName = playerName;
 
     this.reset(); // Also declares some member variables.
   }
@@ -1395,6 +1453,10 @@ class AncientLoreEventGenerator {
 
   offerToStartGame() {
     this.gameSetup.showGameSetupOptions(this.startGame.bind(this));
+  }
+
+  updateGameSetupOptions(peers) {
+    this.gameSetup.updateGameSetupOptions(peers);
   }
 
   startGame(options) {
