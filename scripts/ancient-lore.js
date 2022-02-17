@@ -310,103 +310,6 @@ class ConflictCardSelectionEvent extends LogEvent {
   }
 }
 
-class AncientLorePhase {
-  constructor() {
-    this.gamePhase = "";
-    this.roundI = -1;
-    this.roundPhase = "";
-    this.turnI = -1;
-    this.inExtraTime = false;
-    this.allianceI = -1;
-    // Remember to update copyFrom, isEqual and reset.
-  }
-
-  copyFrom(other) {
-    this.gamePhase = other.gamePhase;
-    this.roundI = other.roundI;
-    this.roundPhase = other.roundPhase;
-    this.turnI = other.turnI;
-    this.inExtraTime = other.inExtraTime;
-    this.allianceI = other.allianceI;
-  }
-
-  isEqual(other) {
-    return (
-      this.gamePhase == other.gamePhase && 
-      this.roundI == other.roundI &&
-      this.roundPhase == other.roundPhase &&
-      this.turnI == other.turnI &&
-      this.inExtraTime == other.inExtraTime &&
-      this.allianceI == other.allianceI
-    );
-  }
-
-  isForming() {
-    return this.gamePhase == "forming";
-  }
-
-  isPlaying() {
-    return this.gamePhase == "playing";
-  }
-
-  isSelectingActions() {
-    return (
-      this.isPlaying() && 
-      this.roundI >= 0 && 
-      this.roundPhase == "selecting-actions"
-    );
-  }
-
-  isInExtraTime() {
-    return this.inExtraTime;
-  }
-
-  isExecutingActions() {
-    return (
-      this.isPlaying() && 
-      this.roundI >= 0 && 
-      this.roundPhase == "executing-actions"
-    );
-  }
-
-  isFinished() {
-    return this.gamePhase == "finished";
-  }
-
-  reset() {
-    this.gamePhase = "forming";
-    this.roundI = -1;
-    this.roundPhase = "";
-    this.turnI = -1;
-    this.inExtraTime = false;
-    this.allianceI = -1;
-  }
-
-  beginRound() {
-    this.gamePhase = "playing";
-    ++this.roundI;
-    this.roundPhase = "selecting-actions";
-    this.turnI = -1;
-    this.inExtraTime = false;
-    this.allianceI = -1;
-  }
-
-  beginExtraTime() {
-    this.inExtraTime = true;
-  }
-
-  beginTurn() {
-    this.roundPhase = "executing-actions";
-    ++this.turnI;
-    this.inExtraTime = false;
-    this.allianceI = -1;
-  }
-
-  finish() {
-    this.gamePhase = "finished";
-  }
-}
-
 class AncientLoreGame extends BasicGame {
   constructor (eventLog, domElement, playerName) {
     super(eventLog);
@@ -444,8 +347,7 @@ class AncientLoreGame extends BasicGame {
     this.model = new AncientLoreModel(playerName);
     this.modelUpdater = new LogEventConsumerUpdater(this.model, eventLog);
 
-    this.coordinator = undefined;
-    this.phase = new AncientLorePhase();
+    this.coordinator = new ActivityCoordinator();
 
     this.model.addListener(this);
 
@@ -455,133 +357,27 @@ class AncientLoreGame extends BasicGame {
   }
 
   onModelUpdated() {
-    // TODO Use ActivityCoordinators.
-    // TODO Always give the player list and board the chance to update.
-
     const m = this.model;
 
-    // TODO Once the phases have been eliminated. Start with a 
-    // dummy coordinator in the constructor, and require makeCoordinator
-    // to return something. 
+    let v = {
+      generator: this.generator,
+      board: this.board,
+      conclusionDisplay: this.conclusionDisplay
+    }
 
     // First update any existing coordinator, including ending it if 
     // necessary. Then if there was or is now no coordinator try to create
     // and begin a coordinator for the current activity.
-    if (this.coordinator) {
-      if (this.coordinator.matches(m.activity)) {
-        this.coordinator.updateGenerator(this.generator, m);
-      } else {
-        // TODO is there a better place for this.
-        // The board must be loaded before forming ends and the game starts.
-        this.board.loadBoard(m.options);
-        
-        this.coordinator.end(this.generator, m);
-        this.coordinator = undefined;
-      }
-    }
-    if (!this.coordinator) {
+    if (!this.coordinator.matches(m.activity)) {
+      this.coordinator.end(v, m);
       this.coordinator = m.activity.makeCoordinator();
-      if (this.coordinator) {
-        this.coordinator.begin(this.generator, m);
-        this.coordinator.updateGenerator(this.generator, m);
-      }
+      this.coordinator.begin(v, m);
     }
-
-
-
+    this.coordinator.update(v, m);
     
-    if (this.phase.isEqual(m.phase)) {
-      this.playerList.update(m.peers, m.players, m.phase.isExecutingActions());
-      return;
-    }
-    
-    if (this.phase.isForming()) {
-      // This was previously forming, so some setup is needed.
-    } else if (
-      this.phase.isSelectingActions() && 
-      !m.phase.isSelectingActions()
-    ) {
-    }
-    // Need to load the board prior to updating players.
-    this.playerList.update(m.peers, m.players, m.phase.isExecutingActions());
-      
-    if (m.phase.isForming()) {
-
-    } else if (m.phase.isPlaying()) {
-      // Either the game was forming and is now playing, or this was already 
-      // playing and the round, round phase or turn must be different.
-      this.board.updateLocations(m.locations);
-
-      if (m.phase.isSelectingActions()) {
-
-      } else if (m.phase.isExecutingActions()) {
-        if (this.phase.turnI < m.phase.turnI) {
-          this.beginTurn(m, m.turns[m.phase.turnI]);
-        } else {
-          this.progressTurn(m, m.turns[m.phase.turnI]);
-        }
-      }
-
-      if (m.phase.isInExtraTime()) {
-        this.generator.offerToContinueRegardless();
-      }
-
-    } else if (m.phase.isFinished()) {
-      this.board.clearHighlight();
-      this.board.updateLocations(m.locations);
-      this.conclusionDisplay.declareWinners(m.winners);
-    }
-
-    // Finally update the game phase.
-    this.phase.copyFrom(m.phase);
-  }
-  
-  beginTurn(m, turn) {
-    /**
-     * Regroup must be done where the player has a unit.
-     * Proclaim must be done where the player has a keeper.
-     * Contest - player has a unit.
-     * Move - Anywhere.
-     * Invade - Anywhere.
-     */
-    console.log('TODO Skip turn if location is unsuitable for action');
-
-    // Clear any selections left over from the previous turn.
-    this.generator.clearSelectionOptions();
-    this.board.updateHighlight(turn.locationId);
-    switch (turn.actionI) {
-      case 1: { // Regroup
-        this.generator.beginRegroup(turn, m.locations);
-        break;
-      }
-      case 2: { // Proclaim
-        console.log('TODO Proclaim');
-        break;
-      }
-      case 3: { // Contest
-        this.generator.beginContest(turn, m.locations, m.playersAllies);
-        break;
-      }
-      case 4: { // Move
-        this.generator.beginMove(turn, m.locations);
-        break;
-      }
-      case 5: { // Invade
-        console.log('TODO Invade');
-        break;
-      }
-      default: {
-        console.log('Invalid action');
-      }
-    }
-    console.log('TODO Check for victory');
-
-  }
-
-  progressTurn(m, turn) {
-    if (this.phase.allianceI < m.phase.allianceI) {
-      this.generator.updateAlliances(m.playersAllies);
-    }
+    const displayOthersActions = m.activity instanceof TurnActivity;
+    this.playerList.update(m.peers, m.players, displayOthersActions);
+    this.board.updateLocations(m.locations);
   }
 }
 
@@ -723,6 +519,8 @@ class AncientLoreBoardUpdater {
   }
 
   updateLocations(locations) {
+    if (!this.locations) return;
+
     for (let locationId = 0; locationId < locations.length; ++locationId) {
       let location = locations[locationId];
       for (let playerId = 0; playerId < location.players.length; ++playerId) {
@@ -832,14 +630,12 @@ class AncientLoreBoardUpdater {
 }
 
 class Activity {
-  constructor(progressWhenActivityStarted) {
-    this.progressWhenActivityStarted = progressWhenActivityStarted;
+  constructor(m) {
+    m.incrementProgress();
+    this.progressWhenActivityStarted = m.progress;
   }
 
-  makeCoordinator() {
-    return undefined; // TODO remove when all activities implement this.
-  }
-  // type() = 0
+  // makeCoordinator() = 0
 }
 
 
@@ -855,40 +651,57 @@ class ActivityCoordinator {
     );
   }
   
-  // isMatchingActivity(activity) = 0
-  begin(inputGenerator, m) {}
-  end(inputGenerator, m) {}
-  // updateGenerator(inputGenerator, m) = 0
+  isMatchingActivity(activity) { return false; }
+  begin(v, m) {}
+  update(v, m) {}
+  end(v, m) {}
+}
+
+
+class TurnActivityCoordinator extends ActivityCoordinator {
+  constructor(activity) {
+    super(activity.progressWhenActivityStarted);
+    this.turn = activity.turn;
+  }
+
+  begin(v, m) {
+    // Clear any selections left over from the previous turn.
+    v.generator.clearSelectionOptions();
+    v.board.updateHighlight(this.turn.locationId);
+    this.doBegin(v, m);
+  }
 }
 
 class FormingActivity extends Activity {
-  constructor(progressWhenActivityStarted) {
-    super(progressWhenActivityStarted);
+  constructor(m) {
+    super(m);
   }
 
   makeCoordinator() {
     class FormingActivityCoordinator extends ActivityCoordinator {
-      constructor(progressWhenActivityStarted) {
-        super(progressWhenActivityStarted);
+      constructor(activity) {
+        super(activity.progressWhenActivityStarted);
       }
 
       isMatchingActivity(activity) {
         return activity instanceof FormingActivity;
       }
 
-      begin(generator, m) {
-        generator.offerToStartGame();
+      begin(v, m) {
+        v.generator.offerToStartGame();
       }
 
-      updateGenerator(generator, m) {
-        generator.updateGameSetupOptions(m.peers);
+      update(v, m) {
+        v.generator.updateGameSetupOptions(m.peers);
       }
 
-      end(generator, m) {
-        generator.onStartGame(m.players, m.myPlayerName);
+      end(v, m) {
+        // The board must be loaded before forming ends and the game starts.
+        v.board.loadBoard(m.options);
+        v.generator.onStartGame(m.players, m.myPlayerName);
       }
     }
-    return new FormingActivityCoordinator(this.progressWhenActivityStarted);
+    return new FormingActivityCoordinator(this);
   }
 
   onStartGame(options, boardSetup, m) {
@@ -944,16 +757,11 @@ class FormingActivity extends Activity {
 
 class ActionSelectionActivity extends Activity {
   constructor(m) {
-    super(m.progress);
+    super(m);
+
+    m.clearSelectedActions();
 
     this.isInExtraTime = false;
-    
-    this.playerActions = [];
-    for (let player of m.players) {
-      player.selectedAction = undefined;
-      player.isActive = true;
-    }
-    m.phase.beginRound();
   }
 
   makeCoordinator() {
@@ -968,20 +776,20 @@ class ActionSelectionActivity extends Activity {
         return activity instanceof ActionSelectionActivity;
       }
 
-      begin(generator, m) {
-        generator.askForActionSelection();
+      begin(v, m) {
+        v.generator.askForActionSelection();
       }
 
-      updateGenerator(generator, m) {
+      update(v, m) {
         if (!this.isInExtraTime && this.activity.isInExtraTime) {
-          generator.offerToContinueRegardless();
+          v.generator.offerToContinueRegardless();
           this.isInExtraTime = true;
         }
       }
 
-      end(generator, m) {
+      end(v, m) {
         // This was previously selecting an action, that needs to stop.
-        generator.clearSelectionOptions();
+        v.generator.clearSelectionOptions();
       }
     }
     return new ActionSelectionActivityCoordinator(this);
@@ -1010,9 +818,7 @@ class ActionSelectionActivity extends Activity {
     if (isEveryoneReady) {
       this.beginExecutingActions(m);
     } else if (hasEveryoneSentSomething) {
-      m.incrementProgress();
       this.isInExtraTime = true;
-      m.phase.beginExtraTime();
     }
   }
 
@@ -1024,14 +830,13 @@ class ActionSelectionActivity extends Activity {
   }
 
   beginExecutingActions(m) {
-    m.incrementProgress();
     new ExecutingActionsActivity(m);
   }
 }
 
 class ExecutingActionsActivity extends Activity {
-  constructor(m, playerActions) {
-    super(m.progress);
+  constructor(m) {
+    super(m);
     
     this.beginExecutingActions(m);
   }
@@ -1041,7 +846,6 @@ class ExecutingActionsActivity extends Activity {
       [undefined, "regroup", "proclaim", "contest", "move", "invade"];
     
     this.turns = [];
-    m.turns = this.turns; // TODO remove m.turns.
     this.turnI = -1;
     for (const [playerId, player] of m.players.entries()) {
       const selectedAction = player.selectedAction;
@@ -1072,28 +876,21 @@ class ExecutingActionsActivity extends Activity {
   }
 
   beginTurn(m) {
-    m.incrementProgress();
     ++this.turnI;
-    m.phase.beginTurn();
-    if (this.turnI >= this.turns.length) {
-      this.endRound(m);
-      return;
-    }
-    const turn = this.turns[this.turnI];
+    let turn = this.turns[this.turnI];
 
-    switch (turn.action) { 
-      case "regroup": {
-        m.activity = new RegroupTurnActivity(m, this.beginTurn.bind(this));
-        break;
-      }
-      case "move": {
-        m.activity = new MoveTurnActivity(m, this.beginTurn.bind(this));
-        break;
-      }
-      default: {
-        m.activity = this;
-        break;
-      }
+    /**
+     * Regroup must be done where the player has a unit.
+     * Proclaim must be done where the player has a keeper.
+     * Contest - player has a unit.
+     * Move - Anywhere.
+     * Invade - Anywhere.
+     */
+     console.log('TODO Skip turn if location is unsuitable for action');
+
+    turn.onFinishedFn = this.beginTurn.bind(this);
+    if (this.turnI == this.turns.length - 1) {
+      turn.onFinishedFn = this.endRound.bind(this);
     }
 
     for (let player of m.players) {
@@ -1103,21 +900,39 @@ class ExecutingActionsActivity extends Activity {
       player.cardSelection = [];
     }
     m.players[turn.playerId].isActive = true;
-    
-    m.playersAllies = []; // playersAllies should be in the conflict activity.
-    for (let playerId = 0; playerId < m.players.length; ++playerId) {
-      m.playersAllies.push({
-        'id': playerId,
-        'name': m.players[playerId].name,
-        'inAlliance': false,
-        'allies': [],
-        'alliedTo': undefined,
-        'offer': undefined
-      });
+
+    switch (turn.action) { 
+      case "regroup": {
+        m.activity = new RegroupTurnActivity(m, turn);
+        break;
+      }
+      case "proclaim": {
+        console.log('TODO Proclaim'); turn.onFinishedFn(m);
+        break;
+      }
+      case "contest": {
+        m.activity = new ContestTurnActivity(m, turn);
+        break;
+      }
+      case "move": {
+        m.activity = new MoveTurnActivity(m, turn);
+        break;
+      }
+      case "invade": {
+        console.log('TODO Invade'); turn.onFinishedFn(m);
+        break;
+      }
+      default: {
+        console.log('Invalid action');
+        turn.onFinishedFn(m);
+        break;
+      }
     }
   }
   
   endRound(m) {
+    console.log('TODO Check for victory at the end of each turn');
+
     for (const location of m.locations) {
       let numUnits = [];
       for (const player of location.players) {
@@ -1136,14 +951,14 @@ class ExecutingActionsActivity extends Activity {
     for (const player of m.players) {
       maxVps = Math.max(maxVps, player.victoryPoints);
     }
+    let winners = [];
     for (const player of m.players) {
       if (player.victoryPoints >= 10 && player.victoryPoints >= maxVps) {
-        m.winners.push(player.name);
+        winners.push(player.name);
       }
     }
-    if (m.winners.length > 0) {
-      m.incrementProgress();
-      m.phase.finish();
+    if (winners.length > 0) {
+      m.activity = new FinishedActivity(m, winners);
     } else {
       m.beginRound();
     }
@@ -1151,11 +966,12 @@ class ExecutingActionsActivity extends Activity {
 }
 
 class TurnActivity extends Activity {
-  constructor(m, onFinishedFn) {
-    super(m.progress);
+  constructor(m, turn) {
+    super(m);
     this.onFinishedFn = () => {
-      onFinishedFn(m);
+      turn.onFinishedFn(m);
     }
+    this.turn = turn;
   }
 
   endTurn() {
@@ -1164,8 +980,8 @@ class TurnActivity extends Activity {
 }
 
 class MovementTurnActivity extends TurnActivity {
-  constructor(m, onFinishedFn) {
-    super(m, onFinishedFn);
+  constructor(m, turn) {
+    super(m, turn);
   }
   
   resolveMovement(playerId, movements, m) {
@@ -1183,8 +999,25 @@ class MovementTurnActivity extends TurnActivity {
 }
 
 class MoveTurnActivity extends MovementTurnActivity {
-  constructor(m, onFinishedFn) {
-    super(m, onFinishedFn);
+  constructor(m, turn) {
+    super(m, turn);
+  }
+
+  makeCoordinator() {
+    class MoveTurnActivityCoordinator extends TurnActivityCoordinator {
+      constructor(activity) {
+        super(activity);
+      }
+
+      isMatchingActivity(activity) {
+        return activity instanceof MoveTurnActivity;
+      }
+
+      doBegin(v, m) {
+        v.generator.beginMove(this.turn, m.locations);
+      }
+    }
+    return new MoveTurnActivityCoordinator(this);
   }
 
   onMoveUnits(playerId, movements, m) {
@@ -1194,10 +1027,27 @@ class MoveTurnActivity extends MovementTurnActivity {
 }
 
 class RegroupTurnActivity extends MovementTurnActivity {
-  constructor(m, onFinishedFn) {
-    super(m, onFinishedFn);
+  constructor(m, turn) {
+    super(m, turn);
   }
   
+  makeCoordinator() {
+    class RegroupTurnActivityCoordinator extends TurnActivityCoordinator {
+      constructor(activity) {
+        super(activity);
+      }
+
+      isMatchingActivity(activity) {
+        return activity instanceof RegroupTurnActivity;
+      }
+
+      doBegin(v, m) {
+        v.generator.beginRegroup(this.turn, m.locations);
+      }
+    }
+    return new RegroupTurnActivityCoordinator(this);
+  }
+
   onMoveUnits(playerId, movements, m) {
     this.resolveMovement(playerId, movements, m);
     
@@ -1214,109 +1064,27 @@ class RegroupTurnActivity extends MovementTurnActivity {
   }
 }
 
-class AncientLoreModel extends LogEventConsumer {
-  constructor(playerName) {
-    super([
-      PeerJoinEvent, 
-      StartAncientLoreEvent, 
-      ActionSelectedEvent, 
-      ContinueEvent, 
-      MoveUnitsEvent,
-      OfferAllianceEvent,
-      AcceptAllianceEvent,
-      ConflictCardSelectionEvent
-    ]);
-    this.phase = new AncientLorePhase();
-    this.listeners = [];
-    this.myPlayerName = playerName;
-
-    this.reset(); // Also declares some member variables.
-  }
-  
-  addListener(listener) {
-    this.listeners.push(listener);
-  }
-
-  reset() {
-    this.options = undefined;
-    this.peers = [];
-    this.players = []; // Added to in onStartGame.
-    this.winners = []; // Added to in endRound.
-    this.locations = []; // Setup in setupBoard.
-    this.phase.reset();
-    this.turns = [];
+class ConflictTurnActivity extends TurnActivity {
+  constructor(m, turn) {
+    super(m, turn);
+    this.isInExtraTime = false;
     this.playersAllies = [];
-
-    this.progress = 1;
-    this.activity = new FormingActivity(this.progress);
-  }
-
-  incrementProgress() {
-    ++this.progress;
-  }
-
-  beginRound() {
-    this.incrementProgress();
-    this.activity = new ActionSelectionActivity(this);
-  }
-
-  // TODO Remove, only here because movement and conflict selection/resolution
-  // have not been extracted out yet.
-  beginTurn() { 
-    if (typeof this.activity.beginTurn == 'function') {
-      this.activity.beginTurn(this);
+    
+    for (let playerId = 0; playerId < m.players.length; ++playerId) {
+      this.playersAllies.push({
+        'id': playerId,
+        'name': m.players[playerId].name,
+        'inAlliance': false,
+        'allies': [],
+        'alliedTo': undefined,
+        'offer': undefined
+      });
     }
   }
 
-  react() {
-    for (const listener of this.listeners) {
-      listener.onModelUpdated();
-    }
-  }
-
-  onPeerJoins(asPlayerName, peerId) {
-    this.incrementProgress();
-    this.peers.push({playerName: asPlayerName, id: peerId});
-  }
-
-  onStartGame(options, boardSetup) {
-    if (typeof this.activity.onStartGame == 'function') {
-      this.activity.onStartGame(options, boardSetup, this);
-    }
-  }
-
-  onActionSelected(playerId, action, locationId) {
-    if (typeof this.activity.onActionSelected == 'function') {
-      this.activity.onActionSelected(playerId, action, locationId, this);
-    }
-  }
-
-  onContinue(playerId) {
-    if (typeof this.activity.onContinue == 'function') {
-      this.activity.onContinue(playerId, this);
-      return;
-    }
-
-    // TODO remove the rest of this function.
-    if (!this.phase.isInExtraTime()) {
-      return;
-    }
-    if (this.phase.isSelectingActions()) {
-      // Some players have an undefined action/locationId.
-      this.beginExecutingActions();
-    } else if (this.phase.isExecutingActions()) {      
-      const turn = this.turns[this.phase.turnI];
-      if (turn.action == "contest" || turn.action == "invade") {
-        this.resolveConflict();
-      }
-    }
-  }
-
-  
-  onMoveUnits(playerId, movements) {
-    if (typeof this.activity.onMoveUnits == 'function') {
-      this.activity.onMoveUnits(playerId, movements, this);
-    }
+  onContinue(playerId, m) {
+    if (!this.isInExtraTime) return;
+    this.resolveConflict(m);
   }
 
   onOfferAlliance(fromId, toId) {
@@ -1326,7 +1094,6 @@ class AncientLoreModel extends LogEventConsumer {
       return;
     }
     this.playersAllies[fromId].offer = toId;
-    ++this.phase.allianceI;
   }
   
   onAcceptAlliance(leadId, withId) {
@@ -1339,17 +1106,19 @@ class AncientLoreModel extends LogEventConsumer {
     this.playersAllies[withId].inAlliance = true;
     this.playersAllies[leadId].allies.push(withId);
     this.playersAllies[leadId].inAlliance = true;
-    ++this.phase.allianceI;
   }
 
-  onConflictCardSelection(playerId, cards, isReady, isTimeOver) {
-    this.players[playerId].cardSelection = cards;
-    this.players[playerId].isReady = isReady;
-    this.players[playerId].isTimeOver = isTimeOver;
+  onConflictCardSelection(playerId, cards, isReady, isTimeOver, m) {
+    // TODO Some similarities to ActionSelectionActivity::onActionSelected
+    // can they share some code?
+
+    m.players[playerId].cardSelection = cards;
+    m.players[playerId].isReady = isReady;
+    m.players[playerId].isTimeOver = isTimeOver;
 
     let isEveryoneReady = true;
     let isTimeOverForEveryone = true;
-    for (let player of this.players) {
+    for (let player of m.players) {
       if (!player.isReady) {
         isEveryoneReady = false;
       }
@@ -1359,13 +1128,13 @@ class AncientLoreModel extends LogEventConsumer {
     }
 
     if (isEveryoneReady) {
-      this.resolveConflict();
+      this.resolveConflict(m);
     } else if (isTimeOverForEveryone) {
-      this.phase.beginExtraTime();
+      this.isInExtraTime = true;
     }
   }
 
-  resolveConflict() {
+  resolveConflict(m) {
     console.log('TODO Resolve conflict');
     /**
      * TODO-INVADE Choose where to bring followers from.
@@ -1376,15 +1145,15 @@ class AncientLoreModel extends LogEventConsumer {
      * TODO-INVADE Select who is chased away.
      * TODO Chase away losers in settlement.
      */
-    const turn = this.turns[this.phase.turnI];
-    const location = this.locations[turn.locationId];
+    const turn = this.turn;
+    const location = m.locations[turn.locationId];
 
     // Must be in the settlement to contest it.
     if (
       turn.action == 'contest' && 
       location.players[turn.playerId].numUnits == 0
     ) {
-      this.beginTurn();
+      this.endTurn();
       return; 
     }
 
@@ -1417,10 +1186,10 @@ class AncientLoreModel extends LogEventConsumer {
     for (let alliance of alliances) {
       alliance.strength = 0;
       let bestTieBreaker = 0;
-      let numPlayers = this.players.length;
+      let numPlayers = m.players.length;
       for (const playerId of alliance.allies) {
         alliance.strength += location.players[playerId].numUnits;
-        let tieBreaker = numPlayers - this.players[playerId].rank;
+        let tieBreaker = numPlayers - m.players[playerId].rank;
         if (playerId == turn.playerId) {
           tieBreaker = numPlayers + 1;
         }
@@ -1431,7 +1200,174 @@ class AncientLoreModel extends LogEventConsumer {
     // Strongest is placed first.
     alliances.sort((a, b) => { return b.strength - a.strength; });
 
-    this.beginTurn();
+    this.endTurn();
+  }
+}
+
+class ContestTurnActivity extends ConflictTurnActivity {
+  constructor(m, turn) {
+    super(m, turn);
+  }
+
+  makeCoordinator() {
+    class ContestTurnActivityCoordinator extends TurnActivityCoordinator {
+      constructor(activity) {
+        super(activity);
+        this.isInExtraTime = false;
+        this.activity = activity;
+        this.playersAllies = activity.playersAllies
+      }
+
+      isMatchingActivity(activity) {
+        return activity instanceof ContestTurnActivity;
+      }
+      
+      doBegin(v, m) {
+        v.generator.beginContest(this.turn, m.locations, this.playersAllies);
+      }
+
+      update(v, m) {
+        v.generator.updateAlliances(this.playersAllies);
+        
+        // TODO Similar code to ActionSelectionActivityCoordinator::update
+        if (!this.isInExtraTime && this.activity.isInExtraTime) {
+          v.generator.offerToContinueRegardless();
+          this.isInExtraTime = true;
+        }
+      }
+    }
+    return new ContestTurnActivityCoordinator(this);
+  }
+}
+
+class FinishedActivity extends Activity {
+  constructor(m, winners) {
+    super(m);
+    this.winners = winners;
+
+    m.clearSelectedActions();
+  }
+
+  makeCoordinator() {
+    class FinishedActivityCoordinator extends ActivityCoordinator {
+      constructor(activity) {
+        super(activity.progressWhenActivityStarted);
+        this.winners = activity.winners
+      }
+
+      isMatchingActivity(activity) {
+        return activity instanceof FinishedActivity;
+      }
+      
+      begin(v, m) {
+        v.board.clearHighlight();
+        v.board.updateLocations(m.locations);
+        v.conclusionDisplay.declareWinners(this.winners);
+      }
+    }
+    return new FinishedActivityCoordinator(this);
+  }
+}
+
+class AncientLoreModel extends LogEventConsumer {
+  constructor(playerName) {
+    super([
+      PeerJoinEvent, 
+      StartAncientLoreEvent, 
+      ActionSelectedEvent, 
+      ContinueEvent, 
+      MoveUnitsEvent,
+      OfferAllianceEvent,
+      AcceptAllianceEvent,
+      ConflictCardSelectionEvent
+    ]);
+    this.listeners = [];
+    this.myPlayerName = playerName;
+
+    this.reset(); // Also declares some member variables.
+  }
+  
+  addListener(listener) {
+    this.listeners.push(listener);
+  }
+
+  reset() {
+    this.options = undefined;
+    this.peers = [];
+    this.players = []; // Added to in onStartGame.
+    this.locations = []; // Setup in setupBoard.
+
+    this.progress = 1;
+    this.activity = new FormingActivity(this);
+  }
+
+  incrementProgress() {
+    ++this.progress;
+  }
+
+  clearSelectedActions() {
+    for (let player of this.players) {
+      player.selectedAction = undefined;
+      player.isActive = true;
+    }
+  }
+
+  beginRound() {
+    this.activity = new ActionSelectionActivity(this);
+  }
+
+  react() {
+    for (const listener of this.listeners) {
+      listener.onModelUpdated();
+    }
+  }
+
+  onPeerJoins(asPlayerName, peerId) {
+    this.incrementProgress();
+    this.peers.push({playerName: asPlayerName, id: peerId});
+  }
+
+  onStartGame(options, boardSetup) {
+    if (typeof this.activity.onStartGame == 'function') {
+      this.activity.onStartGame(options, boardSetup, this);
+    }
+  }
+
+  onActionSelected(playerId, action, locationId) {
+    if (typeof this.activity.onActionSelected == 'function') {
+      this.activity.onActionSelected(playerId, action, locationId, this);
+    }
+  }
+
+  onContinue(playerId) {
+    if (typeof this.activity.onContinue == 'function') {
+      this.activity.onContinue(playerId, this);
+      return;
+    }
+  }
+  
+  onMoveUnits(playerId, movements) {
+    if (typeof this.activity.onMoveUnits == 'function') {
+      this.activity.onMoveUnits(playerId, movements, this);
+    }
+  }
+
+  onOfferAlliance(fromId, toId) {
+    if (typeof this.activity.onOfferAlliance == 'function') {
+      this.activity.onOfferAlliance(fromId, toId, this);
+    }
+  }
+  
+  onAcceptAlliance(leadId, withId) {
+    if (typeof this.activity.onAcceptAlliance == 'function') {
+      this.activity.onAcceptAlliance(leadId, withId, this);
+    }
+  }
+
+  onConflictCardSelection(playerId, cards, isReady, isTimeOver) {
+    if (typeof this.activity.onConflictCardSelection == 'function') {
+      this.activity.onConflictCardSelection(playerId, cards, isReady, isTimeOver, this);
+    }
   }
 }
 
