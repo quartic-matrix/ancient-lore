@@ -36,7 +36,9 @@
     <script src="scripts/svgs.js"></script> 
     <script>
       var games = [];
-      var fakeServer = new FakeServer();
+      if (useFakeServer()) {
+        var fakeServer = new FakeServer();
+      }
       var serverUrls = ['https://quartic-matrix-signalhub.herokuapp.com/'];
 
       document.addEventListener("onload",init(),false);
@@ -72,6 +74,12 @@
         youngerSibling.id = id;
         olderSibling.parentElement.appendChild(youngerSibling);
         return youngerSibling;
+      }
+
+      function useFakeServer() {
+        let url = new URL(window.location.href);
+        let fakeServer = url.searchParams.get("fakeServer");
+        return !!fakeServer;
       }
 
       function getPlayerName() {
