@@ -56,21 +56,48 @@ class StartAncientLoreEvent extends LogEvent {
     let tempHtmlBoard = new AncientLoreBoardUpdater(div);
     tempHtmlBoard.loadBoard(options);
     let numLocations = tempHtmlBoard.locations.length;
+    let numSettlements = numLocations - 1;
 
     // Distribute the units.
     const numStartingUnitsPerPlayer = 8;
     let units = [];
     for (let playerId = 0; playerId < options.players.length; ++playerId) {
       for (let unitI = 0; unitI < numStartingUnitsPerPlayer; ++unitI) {
-        let locationId = Math.floor(Math.random() * (numLocations-1))+1;
+        let locationId = Math.floor(Math.random() * numSettlements) + 1;
         units.push({locationId: locationId, playerId: playerId});
       }
     }
     
+    // Distribute the lore.
+    const numLorePerLocation = 2;
+    let loreDistribution = [];
+    let loreSupply = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+    let loreExtraSupply = [];
+    loreExtraSupply.push(...loreSupply);
+    loreExtraSupply.push(...loreSupply);
+    loreExtraSupply.push(...loreSupply);
+    for (let i = loreSupply.length; i < numLorePerLocation*numSettlements; ++i) {
+      const pickedI = Math.floor(Math.random() * loreExtraSupply.length);
+      loreSupply.push(loreExtraSupply.splice(pickedI, 1)[0]);
+    }
+    for (let j = 0; j < numLorePerLocation; ++j) {
+      // Start from the second location, as the first is the woods which
+      // doesn't contain lore.
+      for (let i = 1; i < numLocations; ++i) {
+        const pickedI = Math.floor(Math.random() * loreSupply.length);
+        loreDistribution.push({
+          locationId: i, 
+          loreType: loreSupply.splice(pickedI, 1)[0]
+        });
+      }
+    }
+    if (loreSupply.length > 0) throw "Must distribute all the lore";
+      
     let boardSetup = {
       numLocations: numLocations,
       connections: tempHtmlBoard.connections(),
-      units: units
+      units: units,
+      loreDistribution: loreDistribution
     };
 
     return new StartAncientLoreEvent(
@@ -365,9 +392,8 @@ class AncientLoreGame extends BasicGame {
       conclusionDisplay: this.conclusionDisplay
     }
 
-    // First update any existing coordinator, including ending it if 
-    // necessary. Then if there was or is now no coordinator try to create
-    // and begin a coordinator for the current activity.
+    // If the current coordinator doesn't match the activity that the model 
+    // is doing, then a new coordinator is needed.
     if (!this.coordinator.matches(m.activity)) {
       this.coordinator.end(v, m);
       this.coordinator = m.activity.makeCoordinator();
@@ -377,7 +403,7 @@ class AncientLoreGame extends BasicGame {
     
     const displayOthersActions = m.activity instanceof TurnActivity;
     this.playerList.update(m.peers, m.players, displayOthersActions);
-    this.board.updateLocations(m.locations);
+    this.board.updateLocations(m.myPlayerId, m.locations);
   }
 }
 
@@ -490,15 +516,20 @@ class AncientLoreBoardUpdater {
       const nameEle = 
         this.board.querySelector(".settlement" + locationId + " .name").children[0];
       location.name = nameEle.innerHTML;
-
-      location.unitDisplayArea = this.makeUnitDisplayArea(locationId);
-
+      
+      let displayAreas = this.makeDisplayAreas(locationId);
+      
+      location.unitDisplayArea = displayAreas.unitDisplayArea;
       location.unitDisplays = [];
       for (let playerId = 0; playerId < options.players.length; ++playerId) {
         let unitDisplay = this.makeUnitDisplay(location, playerId);
         location.unitDisplayArea.appendChild(unitDisplay);
         location.unitDisplays.push(unitDisplay);
       }
+
+      location.loreDisplayArea = displayAreas.loreDisplayArea;
+      // These will be created on demand in updateLoreInLocation.
+      location.loreDisplays = []; 
 
       this.locations.push(location);
     }
@@ -518,7 +549,7 @@ class AncientLoreBoardUpdater {
     return connections;
   }
 
-  updateLocations(locations) {
+  updateLocations(myPlayerId, locations) {
     if (!this.locations) return;
 
     for (let locationId = 0; locationId < locations.length; ++locationId) {
@@ -527,6 +558,7 @@ class AncientLoreBoardUpdater {
         let player = location.players[playerId];
         this.updateUnitsForPlayerInLocation(locationId, playerId, player.numUnits);
       }
+      this.updateLoreInLocation(myPlayerId, location, this.locations[locationId]);
     }
   }
 
@@ -552,8 +584,40 @@ class AncientLoreBoardUpdater {
     }
   }
 
-  makeUnitDisplay(location, playerId) {
+  updateLoreInLocation(myPlayerId, modelLocation, boardLocation) {
+    let showLoreType = false;
+    if (myPlayerId != undefined && myPlayerId >= 0) {
+      showLoreType = modelLocation.players[myPlayerId].numUnits > 0;
+    }
+    let loreDisplays = boardLocation.loreDisplays;
+    let lorePieces = modelLocation.lorePieces;
+    // Create new lore displays as necessary.
+    while (loreDisplays.length < lorePieces.length) {
+      let loreDisplay = this.makeLoreDisplay(location)
+      loreDisplays.push(loreDisplay);
+      boardLocation.loreDisplayArea.appendChild(loreDisplay);
+    }
+    for (let i = 0; i < lorePieces.length; ++i) {
+      const lorePiece = lorePieces[i];
+      let loreDisplay = loreDisplays[i];
+      loreDisplay.style.display = "block";
+      let numberText = loreDisplay.querySelector(".lore-number");
+      if (numberText) {
+        if (showLoreType) {
+          numberText.children[0].innerHTML = lorePiece.toString();
+        } else {
+          numberText.children[0].innerHTML = "";
+        }
+      }
+    }
+    // Hide any extra lore displays.
+    for (let i = lorePieces.length; i < loreDisplays.length; ++i) {
+      let loreDisplay = loreDisplays[i];
+      loreDisplay.style.display = "none";
+    }
+  }
 
+  makeUnitDisplay(location, playerId) {
     let unitDisplay = document.createElement("div");
     let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     // <svg viewBox="-508 54 66 138" width="66" height="138"><g id="g971" class="unit"></g>
@@ -561,7 +625,6 @@ class AncientLoreBoardUpdater {
     svg.setAttribute("width", "66");
     svg.setAttribute("height", "138");
 
-    // TODO colour it.
     const exampleUnit = this.board.querySelector(".examples .unit");
     let unit = exampleUnit.cloneNode(true);
     let back = unit.querySelector(".unit-fill");
@@ -572,7 +635,23 @@ class AncientLoreBoardUpdater {
     return unitDisplay;
   }
 
-  makeUnitDisplayArea(locationId) {
+  makeLoreDisplay(location) {
+    let loreDisplay = document.createElement("div");
+    let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    // <svg viewBox="-508 204 66 66" width="66" height="66"><g id="g1163" class="lore"></g>
+    svg.setAttribute("viewBox", "-508 204 66 66");
+    svg.setAttribute("width", "66");
+    svg.setAttribute("height", "66");
+
+    const exampleLore = this.board.querySelector(".examples .lore");
+    let lore = exampleLore.cloneNode(true);
+
+    svg.appendChild(lore);
+    loreDisplay.appendChild(svg);
+    return loreDisplay;
+  }
+
+  makeDisplayAreas(locationId) {
     let parent = this.board.querySelector(".settlement" + locationId + ".settlement");
     const name = parent.querySelector(".name");
 
@@ -580,9 +659,9 @@ class AncientLoreBoardUpdater {
     let nameBox = name.getBBox();
 
     const x = parentBox.x;
-    const y = (nameBox.y + 1.5*nameBox.height);
+    const y = (nameBox.y + 1.2*nameBox.height);
     const width = parentBox.width;
-    const height = 3*nameBox.height;
+    const height = nameBox.height;
 
     // const x = name.x.baseVal[0].value;
     // const y = (name.y.baseVal[0].value + 20);
@@ -599,16 +678,28 @@ class AncientLoreBoardUpdater {
 
     let foreignObject = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
     foreignObject.style.width = width;
-    foreignObject.style.height = height;
+    foreignObject.style.height = 66+138;
 
-    let div = document.createElement("div");
-    div.classList.add("unit-display-area");
-    div.style.width = width;
-    div.style.height = height;
- 
-    foreignObject.appendChild(div);
+    let displayAreas = {};
+    displayAreas.unitDisplayArea = 
+      this.makeDisplayArea("unit-display-area", width, 138);
+    displayAreas.loreDisplayArea = 
+      this.makeDisplayArea("lore-display-area", width, 66);
+
+    foreignObject.appendChild(displayAreas.loreDisplayArea);
+    foreignObject.appendChild(displayAreas.unitDisplayArea);
+
     group.appendChild(foreignObject);
     parent.appendChild(group);
+    return displayAreas;
+  }
+
+  makeDisplayArea(name, width, height) {
+    let div = document.createElement("div");
+    div.classList.add(name);
+    div.style.width = width;
+    div.style.height = height;
+
     return div;
   }
 
@@ -678,29 +769,6 @@ class FormingActivity extends Activity {
   }
 
   makeCoordinator() {
-    class FormingActivityCoordinator extends ActivityCoordinator {
-      constructor(activity) {
-        super(activity.progressWhenActivityStarted);
-      }
-
-      isMatchingActivity(activity) {
-        return activity instanceof FormingActivity;
-      }
-
-      begin(v, m) {
-        v.generator.offerToStartGame();
-      }
-
-      update(v, m) {
-        v.generator.updateGameSetupOptions(m.peers);
-      }
-
-      end(v, m) {
-        // The board must be loaded before forming ends and the game starts.
-        v.board.loadBoard(m.options);
-        v.generator.onStartGame(m.players, m.myPlayerName);
-      }
-    }
     return new FormingActivityCoordinator(this);
   }
 
@@ -710,6 +778,9 @@ class FormingActivity extends Activity {
     for (let player of m.players) {
       player.victoryPoints = 0;
     }
+    m.myPlayerId = m.players.findIndex((a) => {
+      return a.name == m.myPlayerName;
+    });
     this.setupLocations(options, boardSetup, m);
     m.beginRound();
   }
@@ -724,16 +795,22 @@ class FormingActivity extends Activity {
     }
 
     // Set the units per player for each location to 0.
-    m.locations.forEach(location => {
+    for (let location of m.locations) {
       for (let index = 0; index < options.players.length; index++) {
-        location.players.push({numUnits: 0});
+        location.players.push({numUnits: 0, lore: []});
       }
-    });
+      location.lorePieces = [];
+    }
 
     // Add the units to the appropriate locations.
-    boardSetup.units.forEach(unit => {
+    for (let unit of boardSetup.units) {
       ++m.locations[unit.locationId].players[unit.playerId].numUnits;
-    });
+    }
+
+    // Setup the lore in each location.
+    for (let lorePiece of boardSetup.loreDistribution) {
+      m.locations[lorePiece.locationId].lorePieces.push(lorePiece.loreType);
+    }
 
     this.setupConnections(boardSetup.connections, m);
   }
@@ -755,6 +832,30 @@ class FormingActivity extends Activity {
   }
 }
 
+class FormingActivityCoordinator extends ActivityCoordinator {
+  constructor(activity) {
+    super(activity.progressWhenActivityStarted);
+  }
+
+  isMatchingActivity(activity) {
+    return activity instanceof FormingActivity;
+  }
+
+  begin(v, m) {
+    v.generator.offerToStartGame();
+  }
+
+  update(v, m) {
+    v.generator.updateGameSetupOptions(m.peers);
+  }
+
+  end(v, m) {
+    // The board must be loaded before forming ends and the game starts.
+    v.board.loadBoard(m.options);
+    v.generator.onStartGame(m.players, m.myPlayerName);
+  }
+}
+
 class ActionSelectionActivity extends Activity {
   constructor(m) {
     super(m);
@@ -765,33 +866,6 @@ class ActionSelectionActivity extends Activity {
   }
 
   makeCoordinator() {
-    class ActionSelectionActivityCoordinator extends ActivityCoordinator {
-      constructor(activity) {
-        super(activity.progressWhenActivityStarted);
-        this.activity = activity;
-        this.isInExtraTime = false;
-      }
-
-      isMatchingActivity(activity) {
-        return activity instanceof ActionSelectionActivity;
-      }
-
-      begin(v, m) {
-        v.generator.askForActionSelection();
-      }
-
-      update(v, m) {
-        if (!this.isInExtraTime && this.activity.isInExtraTime) {
-          v.generator.offerToContinueRegardless();
-          this.isInExtraTime = true;
-        }
-      }
-
-      end(v, m) {
-        // This was previously selecting an action, that needs to stop.
-        v.generator.clearSelectionOptions();
-      }
-    }
     return new ActionSelectionActivityCoordinator(this);
   }
 
@@ -831,6 +905,34 @@ class ActionSelectionActivity extends Activity {
 
   beginExecutingActions(m) {
     new ExecutingActionsActivity(m);
+  }
+}
+
+class ActionSelectionActivityCoordinator extends ActivityCoordinator {
+  constructor(activity) {
+    super(activity.progressWhenActivityStarted);
+    this.activity = activity;
+    this.isInExtraTime = false;
+  }
+
+  isMatchingActivity(activity) {
+    return activity instanceof ActionSelectionActivity;
+  }
+
+  begin(v, m) {
+    v.generator.askForActionSelection();
+  }
+
+  update(v, m) {
+    if (!this.isInExtraTime && this.activity.isInExtraTime) {
+      v.generator.offerToContinueRegardless();
+      this.isInExtraTime = true;
+    }
+  }
+
+  end(v, m) {
+    // This was previously selecting an action, that needs to stop.
+    v.generator.clearSelectionOptions();
   }
 }
 
@@ -1004,19 +1106,6 @@ class MoveTurnActivity extends MovementTurnActivity {
   }
 
   makeCoordinator() {
-    class MoveTurnActivityCoordinator extends TurnActivityCoordinator {
-      constructor(activity) {
-        super(activity);
-      }
-
-      isMatchingActivity(activity) {
-        return activity instanceof MoveTurnActivity;
-      }
-
-      doBegin(v, m) {
-        v.generator.beginMove(this.turn, m.locations);
-      }
-    }
     return new MoveTurnActivityCoordinator(this);
   }
 
@@ -1026,25 +1115,58 @@ class MoveTurnActivity extends MovementTurnActivity {
   }
 }
 
+class MoveTurnActivityCoordinator extends TurnActivityCoordinator {
+  constructor(activity) {
+    super(activity);
+  }
+
+  isMatchingActivity(activity) {
+    return activity instanceof MoveTurnActivity;
+  }
+
+  doBegin(v, m) {
+    v.generator.beginMove(this.turn, m.locations);
+  }
+}
+
+class ProclaimTurnActivity extends TurnActivity {
+  constructor(m, turn) {
+    super(m, turn);
+  }
+  
+  makeCoordinator() {
+    return new ProclaimTurnActivityCoordinator(this);
+  }
+
+  onRevealLore(playerId, locationId, loreId, bonusCardPerPlayer, m) {
+    // TODO Reveal the lore, show the players their bonus card, begin voting.
+  }
+
+  onRevealLoreVote(playerId, isInFavour) {
+    // TODO Once everyone applicable has voted, then resolve the vote.
+  }
+}
+
+class ProclaimTurnActivityCoordinator extends TurnActivityCoordinator {
+  constructor(activity) {
+    super(activity);
+  }
+
+  isMatchingActivity(activity) {
+    return activity instanceof ProclaimTurnActivity;
+  }
+
+  doBegin(v, m) {
+    // TODO v.generator.beginProclaim(this.turn, m.locations);
+  }
+}
+
 class RegroupTurnActivity extends MovementTurnActivity {
   constructor(m, turn) {
     super(m, turn);
   }
   
   makeCoordinator() {
-    class RegroupTurnActivityCoordinator extends TurnActivityCoordinator {
-      constructor(activity) {
-        super(activity);
-      }
-
-      isMatchingActivity(activity) {
-        return activity instanceof RegroupTurnActivity;
-      }
-
-      doBegin(v, m) {
-        v.generator.beginRegroup(this.turn, m.locations);
-      }
-    }
     return new RegroupTurnActivityCoordinator(this);
   }
 
@@ -1061,6 +1183,20 @@ class RegroupTurnActivity extends MovementTurnActivity {
     m.players[playerId].rank = 0;
 
     this.endTurn();
+  }
+}
+
+class RegroupTurnActivityCoordinator extends TurnActivityCoordinator {
+  constructor(activity) {
+    super(activity);
+  }
+
+  isMatchingActivity(activity) {
+    return activity instanceof RegroupTurnActivity;
+  }
+
+  doBegin(v, m) {
+    v.generator.beginRegroup(this.turn, m.locations);
   }
 }
 
@@ -1210,33 +1346,34 @@ class ContestTurnActivity extends ConflictTurnActivity {
   }
 
   makeCoordinator() {
-    class ContestTurnActivityCoordinator extends TurnActivityCoordinator {
-      constructor(activity) {
-        super(activity);
-        this.isInExtraTime = false;
-        this.activity = activity;
-        this.playersAllies = activity.playersAllies
-      }
-
-      isMatchingActivity(activity) {
-        return activity instanceof ContestTurnActivity;
-      }
-      
-      doBegin(v, m) {
-        v.generator.beginContest(this.turn, m.locations, this.playersAllies);
-      }
-
-      update(v, m) {
-        v.generator.updateAlliances(this.playersAllies);
-        
-        // TODO Similar code to ActionSelectionActivityCoordinator::update
-        if (!this.isInExtraTime && this.activity.isInExtraTime) {
-          v.generator.offerToContinueRegardless();
-          this.isInExtraTime = true;
-        }
-      }
-    }
     return new ContestTurnActivityCoordinator(this);
+  }
+}
+
+class ContestTurnActivityCoordinator extends TurnActivityCoordinator {
+  constructor(activity) {
+    super(activity);
+    this.isInExtraTime = false;
+    this.activity = activity;
+    this.playersAllies = activity.playersAllies
+  }
+
+  isMatchingActivity(activity) {
+    return activity instanceof ContestTurnActivity;
+  }
+  
+  doBegin(v, m) {
+    v.generator.beginContest(this.turn, m.locations, this.playersAllies);
+  }
+
+  update(v, m) {
+    v.generator.updateAlliances(this.playersAllies);
+    
+    // TODO Similar code to ActionSelectionActivityCoordinator::update
+    if (!this.isInExtraTime && this.activity.isInExtraTime) {
+      v.generator.offerToContinueRegardless();
+      this.isInExtraTime = true;
+    }
   }
 }
 
@@ -1249,23 +1386,24 @@ class FinishedActivity extends Activity {
   }
 
   makeCoordinator() {
-    class FinishedActivityCoordinator extends ActivityCoordinator {
-      constructor(activity) {
-        super(activity.progressWhenActivityStarted);
-        this.winners = activity.winners
-      }
-
-      isMatchingActivity(activity) {
-        return activity instanceof FinishedActivity;
-      }
-      
-      begin(v, m) {
-        v.board.clearHighlight();
-        v.board.updateLocations(m.locations);
-        v.conclusionDisplay.declareWinners(this.winners);
-      }
-    }
     return new FinishedActivityCoordinator(this);
+  }
+}
+
+class FinishedActivityCoordinator extends ActivityCoordinator {
+  constructor(activity) {
+    super(activity.progressWhenActivityStarted);
+    this.winners = activity.winners
+  }
+
+  isMatchingActivity(activity) {
+    return activity instanceof FinishedActivity;
+  }
+  
+  begin(v, m) {
+    v.board.clearHighlight();
+    v.board.updateLocations(m.locations);
+    v.conclusionDisplay.declareWinners(this.winners);
   }
 }
 
@@ -1283,6 +1421,7 @@ class AncientLoreModel extends LogEventConsumer {
     ]);
     this.listeners = [];
     this.myPlayerName = playerName;
+    this.myPlayerId = undefined; // Only determined when the game starts.
 
     this.reset(); // Also declares some member variables.
   }

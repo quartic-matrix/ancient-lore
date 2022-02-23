@@ -60,6 +60,12 @@ input.location-units {
   justify-content: center;
 }
 
+.lore-display-area {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+}
+
 .offer-button, .accept-button {
   border-style: outset;
   background-color: #eee;
