@@ -553,23 +553,20 @@ class AncientLoreBoardUpdater {
     if (!this.locations) return;
 
     for (let locationId = 0; locationId < locations.length; ++locationId) {
-      let location = locations[locationId];
-      for (let playerId = 0; playerId < location.players.length; ++playerId) {
-        let player = location.players[playerId];
-        this.updateUnitsForPlayerInLocation(locationId, playerId, player.numUnits);
+      let modelLocation = locations[locationId];
+    let boardLocation = this.locations[locationId];
+    for (let playerId = 0; playerId < modelLocation.players.length; ++playerId) {
+        let unitDisplay = boardLocation.unitDisplays[playerId];
+        let player = modelLocation.players[playerId];
+        this.updateUnitsForPlayerInLocation(
+          unitDisplay, player.numUnits, player.hasKeeper
+        );
       }
-      this.updateLoreInLocation(myPlayerId, location, this.locations[locationId]);
+      this.updateLoreInLocation(myPlayerId, modelLocation, this.locations[locationId]);
     }
   }
 
-  updateUnitsForPlayerInLocation(locationId, playerId, numUnits) {
-    /*
-    let numberText = this.board.querySelector(
-      ".settlement" + locationId + ".player" + playerId + ".number"
-    );
-    */
-    let location = this.locations[locationId];
-    let unitDisplay = location.unitDisplays[playerId];
+  updateUnitsForPlayerInLocation(unitDisplay, numUnits, hasKeeper) {
     if (unitDisplay) {
       if (numUnits == 0) {
         unitDisplay.style.display = "none";
@@ -579,6 +576,14 @@ class AncientLoreBoardUpdater {
         let numberText = unitDisplay.querySelector(".unit-number");
         if (numberText) {
           numberText.children[0].innerHTML = numUnits.toString();
+        }
+      }
+      let keeperDisplay = unitDisplay.querySelector(".keeper");
+      if (keeperDisplay) {
+        if (hasKeeper) {
+          keeperDisplay.style.visibility = "visible";
+        } else {
+          keeperDisplay.style.visibility = "hidden";
         }
       }
     }
@@ -1280,9 +1285,10 @@ class ConflictTurnActivity extends TurnActivity {
      * Identify the strongest.
      * TODO-INVADE Select who is chased away.
      * TODO Chase away losers in settlement.
+     * Set keepers.
      */
     const turn = this.turn;
-    const location = m.locations[turn.locationId];
+    let location = m.locations[turn.locationId];
 
     // Must be in the settlement to contest it.
     if (
@@ -1335,6 +1341,14 @@ class ConflictTurnActivity extends TurnActivity {
     }
     // Strongest is placed first.
     alliances.sort((a, b) => { return b.strength - a.strength; });
+
+
+    for (let player of location.players) {
+      player.hasKeeper = false;
+    }
+    for (let playerId of alliances[0].allies) {
+      location.players[playerId].hasKeeper = true;
+    }
 
     this.endTurn();
   }
