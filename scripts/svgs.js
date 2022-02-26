@@ -3310,9 +3310,9 @@ const board5Html = `
      borderopacity="1.0"
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
-     inkscape:zoom="0.7123868"
-     inkscape:cx="-113.97304"
-     inkscape:cy="54.138229"
+     inkscape:zoom="0.50373354"
+     inkscape:cx="46.949181"
+     inkscape:cy="280.90747"
      inkscape:document-units="mm"
      inkscape:current-layer="layer3"
      inkscape:document-rotation="0"
@@ -3377,6 +3377,20 @@ const board5Html = `
              style="fill:none;stroke:#d9d9d9;stroke-width:0.85041;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
              d="m 380.457,161.773 c -1.324,3.563 -8.746,6.832 -8.746,13.383 0,1.985 0.672,3.809 1.797,5.266 h 13.722 c 1.133,-1.457 1.797,-3.281 1.739,-5.266 -0.239,-7.972 -7.188,-9.82 -8.512,-13.383 z m -12.125,20.403 c 1.285,4.129 4.895,6.297 4.746,12.48 l -2.848,19.903 h 20.219 l -2.847,-20.071 c -0.036,-6.277 3.476,-8.215 4.746,-12.312 z" />
         </g>
+        <g
+           id="g1221"
+           class="keeper">
+          <path
+             id="path1196"
+             style="fill:#2e3436;fill-opacity:0.564516;fill-rule:nonzero;stroke:none;stroke-width:2.38515;font-variation-settings:normal;opacity:1;vector-effect:none;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;stop-color:#000000;stop-opacity:1"
+             d="M -455.80273 152.86328 C -469.27433 154.18239 -481.8858 154.1629 -494.67188 152.98242 L -499.36133 185.75586 L -451.13672 185.75586 L -455.80273 152.86328 z "
+             transform="matrix(0.14790924,0,0,0.14790924,242.93248,172.44204)" />
+          <path
+             id="path1198"
+             style="fill:#2e3436;fill-opacity:0.56451613;fill-rule:nonzero;stroke:none;stroke-width:2.38515"
+             d="M -474.96875 59.855469 C -477.31348 66.165323 -487.67199 72.091144 -492.85352 81.119141 C -481.10301 79.958997 -469.53897 79.757246 -457.24414 80.763672 C -462.1513 70.527552 -472.53638 66.401162 -474.96875 59.855469 z "
+             transform="matrix(0.14790924,0,0,0.14790924,242.93248,172.44204)" />
+        </g>
       </g>
       <text
          xml:space="preserve"
@@ -3395,6 +3409,13 @@ const board5Html = `
     <g
        id="g1163"
        class="lore">
+      <path
+         id="path1167"
+         style="font-variation-settings:normal;display:inline;opacity:1;vector-effect:none;fill:none;fill-opacity:1;fill-rule:evenodd;stroke:#ffcc00;stroke-width:4.65975321;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;filter:url(#filter12597);stop-color:#000000;stop-opacity:1"
+         transform="matrix(1.8815933,0,0,1.839968,-864.85651,-35.289978)"
+         d="m 195.03511,163.39157 h 23.52905 l 1.10572,-22.76587 -1.84777,-3.73848 c 0,0 -4.17563,-4.75021 -10.89191,-4.75021 h -1e-5 c -6.71628,0 -11.10677,4.81496 -11.10677,4.81496 l -1.84768,3.7386 z"
+         sodipodi:nodetypes="ccccssccc"
+         class="highlight" />
       <g
          id="g1155">
         <path

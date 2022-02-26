@@ -2174,7 +2174,7 @@ class SettlementSelection {
 
 class SettlementHighlighter {
   constructor(board) {
-    this.highlights = board.querySelectorAll(".highlight");
+    this.highlights = board.querySelectorAll(".settlement .highlight");
   }
 
   update(settlementId, colour) {
