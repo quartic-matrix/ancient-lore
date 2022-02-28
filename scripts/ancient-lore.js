@@ -395,7 +395,9 @@ class AncientLoreGame extends BasicGame {
     // If the current coordinator doesn't match the activity that the model 
     // is doing, then a new coordinator is needed.
     if (!this.coordinator.matches(m.activity)) {
-      this.coordinator.end(v, m);
+      this.coordinator.end(v, m);  
+      // Clear any selections left over from the activity that has ended.
+      v.generator.clearSelectionOptions();
       this.coordinator = m.activity.makeCoordinator();
       this.coordinator.begin(v, m);
     }
@@ -742,7 +744,7 @@ class ActivityCoordinator {
 
   matches(activity) {
     return (
-      this.progressWhenActivityStarted = activity.progressWhenActivityStarted &&
+      this.progressWhenActivityStarted == activity.progressWhenActivityStarted &&
       this.isMatchingActivity(activity)
     );
   }
@@ -761,8 +763,6 @@ class TurnActivityCoordinator extends ActivityCoordinator {
   }
 
   begin(v, m) {
-    // Clear any selections left over from the previous turn.
-    v.generator.clearSelectionOptions();
     v.board.updateHighlight(this.turn.locationId);
     this.doBegin(v, m);
   }
@@ -876,8 +876,6 @@ class ActionSelectionActivity extends Activity {
 
 
   onActionSelected(playerId, action, locationId, m) {
-    m.incrementProgress();
-
     m.players[playerId].selectedAction = { action: action, locationId: locationId };
     m.players[playerId].isActive = action == undefined || locationId == undefined;
 
@@ -933,11 +931,6 @@ class ActionSelectionActivityCoordinator extends ActivityCoordinator {
       v.generator.offerToContinueRegardless();
       this.isInExtraTime = true;
     }
-  }
-
-  end(v, m) {
-    // This was previously selecting an action, that needs to stop.
-    v.generator.clearSelectionOptions();
   }
 }
 
@@ -1476,7 +1469,6 @@ class AncientLoreModel extends LogEventConsumer {
   }
 
   onPeerJoins(asPlayerName, peerId) {
-    this.incrementProgress();
     this.peers.push({playerName: asPlayerName, id: peerId});
   }
 
@@ -1622,7 +1614,6 @@ class AncientLoreEventGenerator {
 
   beginRegroup(turn, locations) {
     if (this.myPlayerId != turn.playerId) { 
-      this.clearSelectionOptions();
       return; 
     }
 
@@ -1640,7 +1631,6 @@ class AncientLoreEventGenerator {
 
   beginMove(turn, locations) {
     if (this.myPlayerId != turn.playerId) { 
-      this.clearSelectionOptions();
       return; 
     }
 
@@ -1901,8 +1891,6 @@ class AncientLoreInputCollector {
   }
 
   startSelectingAnAction(onSelectionChanges) {
-    this.cancelOngoingSelection();
-
     this.readyButton.disabled = true;
 
     let action;
@@ -1930,7 +1918,6 @@ class AncientLoreInputCollector {
     maxUnitsPerSettlement,
     onInputChanged
   ) {
-    this.cancelOngoingSelection();
     this.settlementSelection.highlighter.update(toLocationId, "#ff0000");
     /**
      * Place a number input on top of each of the other locations. Whenever
@@ -1967,6 +1954,7 @@ class AncientLoreInputCollector {
     this.settlementSelection.cancel();
     this.unitsToMoveSelection.cancel();
     this.conflictCardSelection.cancel();
+    this.allianceSelection.cancel();
     
     if (this.countdown) {
       this.countdown.cancel();
@@ -2364,9 +2352,8 @@ class AllianceSelection {
     */
     let players = playersAllies;
 
-    if (this.table) {
-      this.table.remove();
-    }
+    // We start creating the table from scratch on each update.
+    this.cancel();
     this.table = document.createElement("table");
     let tableBody = document.createElement("tbody");
     
@@ -2450,6 +2437,12 @@ class AllianceSelection {
     }
     this.table.appendChild(tableBody);
     this.overlay.appendChild(this.table);
+  }
+
+  cancel() {
+    if (this.table) {
+      this.table.remove();
+    }
   }
 }
 
