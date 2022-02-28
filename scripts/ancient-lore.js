@@ -551,13 +551,13 @@ class AncientLoreBoardUpdater {
     return connections;
   }
 
-  updateLocations(myPlayerId, locations) {
+  updateLocations(myPlayerId, modelLocations) {
     if (!this.locations) return;
 
-    for (let locationId = 0; locationId < locations.length; ++locationId) {
-      let modelLocation = locations[locationId];
-    let boardLocation = this.locations[locationId];
-    for (let playerId = 0; playerId < modelLocation.players.length; ++playerId) {
+    for (let locationId = 0; locationId < modelLocations.length; ++locationId) {
+      let modelLocation = modelLocations[locationId];
+      let boardLocation = this.locations[locationId];
+      for (let playerId = 0; playerId < modelLocation.players.length; ++playerId) {
         let unitDisplay = boardLocation.unitDisplays[playerId];
         let player = modelLocation.players[playerId];
         this.updateUnitsForPlayerInLocation(
@@ -1409,7 +1409,6 @@ class FinishedActivityCoordinator extends ActivityCoordinator {
   
   begin(v, m) {
     v.board.clearHighlight();
-    v.board.updateLocations(m.locations);
     v.conclusionDisplay.declareWinners(this.winners);
   }
 }
