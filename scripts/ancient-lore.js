@@ -1007,7 +1007,7 @@ class ExecutingActionsActivity extends Activity {
         break;
       }
       case "proclaim": {
-        console.log('TODO Proclaim'); turn.onFinishedFn(m);
+        m.activity = new ProclaimTurnActivity(m, turn);
         break;
       }
       case "contest": {
@@ -1155,7 +1155,7 @@ class ProclaimTurnActivityCoordinator extends TurnActivityCoordinator {
   }
 
   doBegin(v, m) {
-    // TODO v.generator.beginProclaim(this.turn, m.locations);
+    v.generator.beginProclaim(this.turn, m.locations);
   }
 }
 
@@ -1693,6 +1693,24 @@ class AncientLoreEventGenerator {
     this.eventLog.add(moveUnitsEvent);
   }
 
+  beginProclaim(turn, locations) {
+    if (this.myPlayerId != turn.playerId) { 
+      return; 
+    }
+
+    let startBonusCardAllocationFn = () => {
+
+      this.input.startBonusCardAllocation();
+    };
+
+    let onSelectedFn = (element) => {
+      this.input.showReadyOption(startBonusCardAllocationFn, "Reveal");
+    };
+
+    this.input.startLoreSelection(turn.locationId , onSelectedFn);
+
+  }
+
   beginContest(turn, locations, playersAllies) {
     if (this.myPlayerId < 0) { return; }
 
@@ -1849,8 +1867,11 @@ class AncientLoreInputCollector {
     this.onContinueFn = undefined;
     this.initButtons();
 
+    this.settlementHighlighter = undefined; // Set in onStartGame.
+
     this.actionSelection = new ActionSelection(this.cardsArea);
     this.settlementSelection = new SettlementSelection(this.board);
+    this.loreSelection = new LoreSelection(this.board);
     this.unitsToMoveSelection = new UnitsToMoveSelection(this.overlay, this.board);
     this.allianceSelection = new AllianceSelection(this.overlay);
     this.conflictCardSelection = new ConflictCardSelection(this.cardsArea);
@@ -1871,7 +1892,7 @@ class AncientLoreInputCollector {
   }
 
   onStartGame() {
-    this.settlementSelection.onStartGame();
+    this.settlementHighlighter = new SettlementHighlighter(this.board);
   }
 
   startCountdown(timeInMs, onDoneFn) {
@@ -1879,8 +1900,9 @@ class AncientLoreInputCollector {
     this.countdown.start(onDoneFn);
   }
 
-  showReadyOption(onClickFn) {
+  showReadyOption(onClickFn, buttonText = "Ready") {
     this.onReadyFn = onClickFn;
+    this.readyButton.value = buttonText;
     this.readyButton.style.display = "block";
   }
   
@@ -1909,7 +1931,7 @@ class AncientLoreInputCollector {
       myOnSelectionChanges();
     };
     this.actionSelection.start(onActionSelected);
-    this.settlementSelection.start(onLocationSelected);
+    this.settlementSelection.start(onLocationSelected, this.settlementHighlighter);
   }
 
   startMoveSelection(
@@ -1917,7 +1939,7 @@ class AncientLoreInputCollector {
     maxUnitsPerSettlement,
     onInputChanged
   ) {
-    this.settlementSelection.highlighter.update(toLocationId, "#ff0000");
+    this.settlementHighlighter.update(toLocationId, "#ff0000");
     /**
      * Place a number input on top of each of the other locations. Whenever
      * these are changed update numUnitsFromSettlements.
@@ -1925,6 +1947,16 @@ class AncientLoreInputCollector {
     this.unitsToMoveSelection.start(
       toLocationId, maxUnitsPerSettlement, onInputChanged
     );
+  }
+
+  startLoreSelection(locationId, onSelected){
+    this.loreSelection.start(locationId, onSelected);
+  }
+
+  startBonusCardAllocation() {
+    this.loreSelection.cancel();
+    this.readyButton.style.display = "none";
+    // TODO.
   }
 
   startConflictCardSelection(onConflictCardSelectedFn) {
@@ -1951,6 +1983,7 @@ class AncientLoreInputCollector {
 
     this.actionSelection.cancel();
     this.settlementSelection.cancel();
+    this.loreSelection.cancel();
     this.unitsToMoveSelection.cancel();
     this.conflictCardSelection.cancel();
     this.allianceSelection.cancel();
@@ -2116,60 +2149,53 @@ class ActionSelection extends CardSelection {
   }
 }
 
-class SettlementSelection {
-  constructor(board) {
-    this.board = board;
+class BoardSelection {
+  constructor() {
     this.highlighter = undefined; // Created in start.
     this.clickHandlers = [];
-    this.selectedId;
-    this.onLocationSelected;
   }
 
-  onStartGame() {
-    if (!this.highlighter) {
-      this.highlighter = new SettlementHighlighter(this.board);
-    }
-  }
-
-  start(onLocationSelected) {
-    this.selectedId = -1;
-    this.onLocationSelected = onLocationSelected;
-
-    let numSettlements = this.board.querySelectorAll(".settlement").length;
-    for (let i = 0; i < numSettlements; i++) {
-      this.clickHandlers.push((event) => {
-        event.stopPropagation();
-        this.selectedId = i;
-        this.updateHighlight();
-        if (this.onLocationSelected) {
-          this.onLocationSelected(this.selectedId);
-        }
-      });
-      let settlement = this.board.querySelector(".settlement" + i + ".settlement");
-      settlement.addEventListener("click", this.clickHandlers[i]);
-    }
-    
-    this.updateHighlight();
-  }
-  
   cancel() {
     if (this.highlighter) {
       this.highlighter.clear();
     }
-    this.onLocationSelected = undefined;
     this.removeClickHandlers();
   }
 
-  updateHighlight() {
-    this.highlighter.update(this.selectedId, "#ffcc00");
-  }
-
   removeClickHandlers() {
-    for (let i = 0; i < this.clickHandlers.length; i++) {
-      let settlement = this.board.querySelector(".settlement" + i + ".settlement");
-      settlement.removeEventListener("click", this.clickHandlers[i]);
+    for (let clickHandler of this.clickHandlers) {
+      clickHandler.element.removeEventListener("click", clickHandler.fn);
     }
     this.clickHandlers = [];
+  }
+}
+
+class SettlementSelection extends BoardSelection {
+  constructor(board) {
+    super();
+    this.board = board;
+  }
+
+  start(onSelected, settlementHighlighter) {
+    this.highlighter = settlementHighlighter;
+
+    let numSettlements = this.board.querySelectorAll(".settlement").length;
+    for (let i = 0; i < numSettlements; i++) {
+      let clickHandler = {
+        element: this.board.querySelector(".settlement" + i + ".settlement"),
+        fn: (event) => {
+          event.stopPropagation();
+          this.highlighter.update(i, "#ffcc00");
+          if (onSelected) {
+            onSelected(i);
+          }
+        }
+      };
+      clickHandler.element.addEventListener("click", clickHandler.fn);
+      this.clickHandlers.push(clickHandler);
+    }
+    
+    this.highlighter.clear();
   }
 }
 
@@ -2191,6 +2217,61 @@ class SettlementHighlighter {
 
   clear() {
     this.update(-1);
+  }
+}
+
+class LoreSelection extends BoardSelection {
+  constructor(board) {
+    super();
+    this.board = board;
+  }
+
+  start(locationId, onSelected) {
+    this.highlighter = new LoreHighlighter(this.board);
+
+    let lorePieces = this.board.querySelectorAll(
+      ".settlement" + locationId + " .lore"
+    );
+    for (let lorePiece of lorePieces) {
+      let clickHandler = {
+        element: lorePiece,
+        fn: (event) => {
+          event.stopPropagation();
+          this.highlighter.update(lorePiece, "#ffcc00");
+          if (onSelected) {
+            onSelected(lorePiece);
+          }
+        }
+      };
+      clickHandler.element.addEventListener("click", clickHandler.fn);
+      this.clickHandlers.push(clickHandler);
+    }
+    
+    this.highlighter.clear();
+  }
+}
+
+class LoreHighlighter {
+  constructor(board) {
+    this.highlights = board.querySelectorAll(".lore .highlight");
+  }
+
+  update(loreElement, colour) {
+    for (let highlight of this.highlights) {
+      highlight.style.visibility = "hidden";
+    }
+
+    if (loreElement) {
+      let highlight = loreElement.querySelector(".highlight")
+      if (highlight) {
+        highlight.style.visibility = "visible";
+        highlight.style.stroke = colour;
+      }
+    }
+  }
+
+  clear() {
+    this.update();
   }
 }
 
