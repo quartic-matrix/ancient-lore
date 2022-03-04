@@ -610,8 +610,8 @@ class AncientLoreBoardUpdater {
       loreDisplay.style.display = "block";
       let numberText = loreDisplay.querySelector(".lore-number");
       if (numberText) {
-        if (showLoreType) {
-          numberText.children[0].innerHTML = lorePiece.toString();
+        if (showLoreType || lorePiece.isRevealed) {
+          numberText.children[0].innerHTML = lorePiece.type.toString();
         } else {
           numberText.children[0].innerHTML = "";
         }
@@ -814,7 +814,10 @@ class FormingActivity extends Activity {
 
     // Setup the lore in each location.
     for (let lorePiece of boardSetup.loreDistribution) {
-      m.locations[lorePiece.locationId].lorePieces.push(lorePiece.loreType);
+      m.locations[lorePiece.locationId].lorePieces.push({
+        type: lorePiece.loreType,
+        isRevealed: false
+      });
     }
 
     this.setupConnections(boardSetup.connections, m);
@@ -1130,24 +1133,41 @@ class MoveTurnActivityCoordinator extends TurnActivityCoordinator {
 class ProclaimTurnActivity extends TurnActivity {
   constructor(m, turn) {
     super(m, turn);
+
+    this.location = m.locations[turn.locationId];
+
+    this.playersWithKeeper = [];
+    for (let i = 0; i < this.location.players.length; ++i) {
+      if (this.location.players[i].hasKeeper) {
+        this.playersWithKeeper.push({playerId: i, playerName: m.players[i].name});
+      }
+    }
   }
   
   makeCoordinator() {
     return new ProclaimTurnActivityCoordinator(this);
   }
 
-  onRevealLore(playerId, locationId, loreId, bonusCardPerPlayer, m) {
-    // TODO Reveal the lore, show the players their bonus card, begin voting.
+  onRevealLore(loreI, bonusCardPerPlayer, m) {
+    for (let cardPerPlayer of bonusCardPerPlayer) {
+      m.bonusCardDeck.findAndDiscard(cardPerPlayer.card);
+    }
+
+    // TODO Reveal the lore, begin voting.
+    this.location.lorePieces[loreI].isRevealed = true;
+    
   }
 
-  onRevealLoreVote(playerId, isInFavour) {
+  onRevealLoreVote(playerId, isInFavour, m) {
     // TODO Once everyone applicable has voted, then resolve the vote.
+
   }
 }
 
 class ProclaimTurnActivityCoordinator extends TurnActivityCoordinator {
   constructor(activity) {
     super(activity);
+    this.playersWithKeeper = activity.playersWithKeeper;
   }
 
   isMatchingActivity(activity) {
@@ -1155,7 +1175,13 @@ class ProclaimTurnActivityCoordinator extends TurnActivityCoordinator {
   }
 
   doBegin(v, m) {
-    v.generator.beginProclaim(this.turn, m.locations);
+    v.generator.beginProclaim(this.turn, this.playersWithKeeper, m.bonusCardDeck);
+  }
+
+  update(v, m) {
+    // If I have a keeper
+      // TODO show my bonus card
+      // TODO show vote options
   }
 }
 
@@ -1444,6 +1470,7 @@ class AncientLoreModel extends LogEventConsumer {
 
     this.progress = 1;
     this.activity = new FormingActivity(this);
+    this.bonusCardDeck = new BonusCardDeck();
   }
 
   incrementProgress() {
@@ -1511,6 +1538,56 @@ class AncientLoreModel extends LogEventConsumer {
   onConflictCardSelection(playerId, cards, isReady, isTimeOver) {
     if (typeof this.activity.onConflictCardSelection == 'function') {
       this.activity.onConflictCardSelection(playerId, cards, isReady, isTimeOver, this);
+    }
+  }
+}
+
+class CardDeck {
+  constructor() {
+    this.deck = [];
+    this.discardPile = [];
+  }
+
+  addCard(card) {
+    this.deck.push(card);
+  }
+
+  peek(numToPeekAt) {
+    if (this.deck.length < numToPeekAt) {
+      this.deck.push(...this.discardPile);
+      this.discardPile = [];
+    }
+    let peekedCards = [];
+    for (let i = 0; i < numToPeekAt; i++) {
+      const pickedI = Math.floor(Math.random() * this.deck.length);
+      peekedCards.push(...this.deck.splice(pickedI, 1));
+    }
+    this.deck.push(...peekedCards);
+    return peekedCards;
+  }
+
+  findAndDiscard(cards) {
+    for (let card of cards) {
+      let index = this.deck.findIndex(card);
+      this.discardPile.push(this.deck.splice(index, 1));
+    }
+  }
+}
+
+class BonusCardDeck extends CardDeck {
+  constructor() {
+    super();
+    this.addCards(5, 1, 0);
+    this.addCards(2, 2, 0);
+    this.addCards(2, 1, 1);
+    this.addCards(2, 0, 2);
+    this.addCards(5, 0, 1);
+    this.addCards(4, 0, 0);
+  }
+
+  addCards(numCards, numFollowers, numArtifacts) {
+    for (let i = 0; i < numCards; i++) {
+      this.addCard({ numFollowers: numFollowers, numArtifacts: numArtifacts });    
     }
   }
 }
@@ -1693,14 +1770,14 @@ class AncientLoreEventGenerator {
     this.eventLog.add(moveUnitsEvent);
   }
 
-  beginProclaim(turn, locations) {
+  beginProclaim(turn, playersWithKeeper, bonusCardDeck) {
     if (this.myPlayerId != turn.playerId) { 
       return; 
     }
 
     let startBonusCardAllocationFn = () => {
-
-      this.input.startBonusCardAllocation();
+      this.clearSelectionOptions();
+      this.input.startBonusCardAllocation(playersWithKeeper, bonusCardDeck);
     };
 
     let onSelectedFn = (element) => {
@@ -1872,6 +1949,7 @@ class AncientLoreInputCollector {
     this.actionSelection = new ActionSelection(this.cardsArea);
     this.settlementSelection = new SettlementSelection(this.board);
     this.loreSelection = new LoreSelection(this.board);
+    this.bonusCardAllocation = new BonusCardAllocation(this.cardsArea);
     this.unitsToMoveSelection = new UnitsToMoveSelection(this.overlay, this.board);
     this.allianceSelection = new AllianceSelection(this.overlay);
     this.conflictCardSelection = new ConflictCardSelection(this.cardsArea);
@@ -1953,10 +2031,15 @@ class AncientLoreInputCollector {
     this.loreSelection.start(locationId, onSelected);
   }
 
-  startBonusCardAllocation() {
+  startBonusCardAllocation(playersWithKeeper, bonusCardDeck) {
     this.loreSelection.cancel();
     this.readyButton.style.display = "none";
+    
+    let bonusCards = bonusCardDeck.peek(3);
+    this.bonusCardAllocation.start(bonusCards, playersWithKeeper);
+
     // TODO.
+
   }
 
   startConflictCardSelection(onConflictCardSelectedFn) {
@@ -1984,6 +2067,7 @@ class AncientLoreInputCollector {
     this.actionSelection.cancel();
     this.settlementSelection.cancel();
     this.loreSelection.cancel();
+    this.bonusCardAllocation.cancel();
     this.unitsToMoveSelection.cancel();
     this.conflictCardSelection.cancel();
     this.allianceSelection.cancel();
@@ -2026,7 +2110,8 @@ class CardSelection {
 
   initCardElement(cardType, html) {
     let card = document.createElement("div");
-    card.addEventListener("click", () => {
+    card.addEventListener("click", (event) => {
+      event.stopPropagation();
       this.onSelected(card, cardType);
     });
     card.cardType = cardType;
@@ -2034,8 +2119,6 @@ class CardSelection {
     card.className = "selection card";
     card.innerHTML = html;
     card.style.display = "none";
-    card.style.position = "relative";
-    card.style.flexBasis = "10%";
     this.cards.push(card);
     this.cardsArea.appendChild(card);
   }
@@ -2272,6 +2355,95 @@ class LoreHighlighter {
 
   clear() {
     this.update();
+  }
+}
+
+class BonusCardAllocation extends CardSelection {
+  constructor(cardsArea) {
+    super(cardsArea);
+
+    // Set in start.
+    this.unallocated = undefined;
+    this.playersElements = [];
+
+    // Set in onSelected.
+    this.selectedCard = undefined;
+  }
+
+  buildColumn(headingText, canHaveMultipleCards) {
+    let columnElement = document.createElement("div");
+    columnElement.classList.add("cards-area-column");
+
+    let heading = document.createElement("p");
+    heading.classList.add("cards-area-heading");
+    heading.innerHTML = headingText;
+
+    let areaElement = document.createElement("div");
+    areaElement.classList.add("cards-area");
+
+    columnElement.addEventListener("click", () => {
+      if (this.selectedCard) {
+        if (!canHaveMultipleCards && areaElement.firstChild) {
+          this.unallocated.area.appendChild(areaElement.firstChild);
+        }
+        areaElement.appendChild(this.selectedCard);
+      }
+    });
+
+    columnElement.appendChild(heading);
+    columnElement.appendChild(areaElement);
+    this.cardsArea.appendChild(columnElement);
+    return { column: columnElement, area: areaElement };
+  }
+
+  start(bonusCards, playersWithKeeper) {
+    this.cancel();
+
+    this.unallocated = this.buildColumn("Unallocated", true);
+
+    // Find the bonus cards to allocate.
+    for (let bonusCard of bonusCards) {
+      let cardType = "bonus-f" + bonusCard.numFollowers + "-a" + bonusCard.numArtifacts;
+      this.initCardElement(cardType, this.selectHtml(cardType));
+      let card = this.cards[this.cards.length - 1];
+      this.unallocated.area.appendChild(card);
+    }
+    this.showAll();
+
+    // Create the player columns.
+    for (let playerWithKeeper of playersWithKeeper) {
+      this.playersElements.push(this.buildColumn(playerWithKeeper.playerName, false));
+    }
+  }
+
+  onSelected(card, cardType) {
+    if (this.selectedCard) this.deselect(this.selectedCard);
+    this.select(card);
+    this.selectedCard = card;
+  }
+
+  cancel() {
+    if (this.unallocated) this.unallocated.column.remove();
+    for (let playerElements of this.playersElements) {
+      playerElements.column.remove();
+    }
+    this.playersElements = [];
+    for (let card of this.cards) {
+      card.remove();
+    }
+    this.cards = [];
+  }
+
+  selectHtml(cardType) {
+    switch (cardType) {
+      case "bonus-f2-a0": return gain2FollowersCardHtml;
+      case "bonus-f1-a0": return gain1FollowerCardHtml;
+      case "bonus-f1-a1": return gain1Follower1Plus2CardHtml;
+      case "bonus-f0-a1": return gain1Plus2CardHtml;
+      case "bonus-f0-a2": return gain2Plus2sCardHtml;
+      case "bonus-f0-a0": return gainNothingCardHtml;
+      default: return gainNothingCardHtml;
+    }
   }
 }
 
