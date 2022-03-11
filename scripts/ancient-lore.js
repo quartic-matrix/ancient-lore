@@ -889,7 +889,7 @@ class FormingActivity extends Activity {
     m.players = options.players;
     for (let player of m.players) {
       player.victoryPoints = 0;
-      player.extraCards = [];
+      player.extraCards = ["plus2", "convert", "convert", "plus2"]; // TODO = [];
     }
     m.myPlayerId = m.players.findIndex((a) => {
       return a.name == m.myPlayerName;
@@ -1306,7 +1306,7 @@ class ProclaimTurnVoteActivity extends TurnActivity {
   }
 
   onProclaimLoreVote(playerId, isInFavour, m) {
-    // TODO Once everyone applicable has voted, then resolve the vote.
+    // Once everyone applicable has voted, then resolve the vote.
     let numInFavour = 0;
     let numNotInFavour = 0;
     for (let playerWithKeeper of this.playersWithKeeper) {
@@ -1372,7 +1372,8 @@ class ProclaimTurnVoteActivityCoordinator extends TurnActivityCoordinator {
     }
   }
 
-  end (v, m) {
+  end(v, m) {
+    v.generator.showVotes(this.activity.playersWithKeeper);
     v.board.clearLoreHighlight();
   }
 }
@@ -2067,6 +2068,10 @@ class AncientLoreEventGenerator {
     this.eventLog.add(proclaimLoreVoteEvent);
   }
 
+  showVotes(playersWithKeeper) {
+    this.input.showVotes(playersWithKeeper);
+  }
+
   beginContest(extraCards, playersAllies) {
     if (this.myPlayerId < 0) { return; }
 
@@ -2351,6 +2356,12 @@ class AncientLoreInputCollector {
     this.onVoteFn = onVoteFn;
     this.voteYesButton.style.display = "block";
     this.voteNoButton.style.display = "block";
+  }
+
+  showVotes(playersWithKeeper) {
+    let voteDisplay = new VotesDisplay(this.overlay);
+    voteDisplay.update(playersWithKeeper);
+    setTimeout(() => { voteDisplay.cancel(); }, 5000);
   }
 
   startConflictCardSelection(extraCards, onConflictCardSelectedFn) {
@@ -2814,6 +2825,70 @@ class BonusCardDisplay extends CardSelection {
   }
 
   onSelected() {}
+}
+
+class VotesDisplay {
+  constructor(overlay) {
+    this.overlay = overlay;
+    this.table = undefined;
+  }
+
+  update(playersWithKeeper) {
+    /**
+     *  playersWithKeeper[]
+     *    playerName
+     *    playerId
+     *    isInFavour
+     */
+
+    /**
+      <table>
+        <tbody>
+          <tr>
+            <td><p>Andrew</p></td>
+            <td><p>No</p></td>
+          </tr>
+          <tr>
+            <td><p>Tessa</p></td>
+            <td><p>Yes</p></td>
+          </tr>
+        </tbody>
+      </table>
+    */
+
+    // We start creating the table from scratch on each update.
+    this.cancel();
+    this.table = document.createElement("table");
+    let tableBody = document.createElement("tbody");
+
+    for (let player of playersWithKeeper) {
+      let tableRow = document.createElement("tr"); 
+
+      let nameCell = document.createElement("td"); 
+      nameCell.classList.add("alliance");
+      let nameP = document.createElement("span");
+      nameP.classList.add("leadAlly");
+      nameP.innerHTML = player.playerName;
+      nameCell.appendChild(nameP);
+
+      let voteCell = document.createElement("td");  
+      let voteP = document.createElement("span");
+      voteP.innerHTML = player.isInFavour ? "Yes" : "No";
+      voteCell.appendChild(voteP);
+
+      tableRow.appendChild(nameCell);
+      tableRow.appendChild(voteCell);
+      tableBody.appendChild(tableRow);
+    }
+    this.table.appendChild(tableBody);
+    this.overlay.appendChild(this.table);
+  }
+  
+  cancel() {
+    if (this.table) {
+      this.table.remove();
+    }
+  }
 }
 
 class UnitsToMoveSelection {
