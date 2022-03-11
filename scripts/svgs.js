@@ -3310,11 +3310,11 @@ const board5Html = `
      borderopacity="1.0"
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
-     inkscape:zoom="0.3561934"
-     inkscape:cx="447.47899"
-     inkscape:cy="589.93677"
+     inkscape:zoom="0.50373354"
+     inkscape:cx="867.6945"
+     inkscape:cy="481.31151"
      inkscape:document-units="mm"
-     inkscape:current-layer="layer1"
+     inkscape:current-layer="layer4"
      inkscape:document-rotation="0"
      showgrid="false"
      units="px"
@@ -4299,6 +4299,27 @@ const board5Html = `
            x="-384.95837"
            id="tspan17610"
            sodipodi:role="line">Highton</tspan></text>
+    </g>
+  </g>
+  <g
+     inkscape:groupmode="layer"
+     id="layer4"
+     inkscape:label="proclaimed lore">
+    <g
+       id="g1235"
+       transform="translate(1011.2673,35.403742)"
+       class="proclaimed-lore"
+       width="390"
+       height="110">
+      <rect
+         style="font-variation-settings:normal;opacity:1;vector-effect:none;fill:#000000;fill-opacity:0.16129;stroke:none;stroke-width:2.38515;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;stop-color:#000000;stop-opacity:1"
+         id="rect1225"
+         width="390"
+         height="110"
+         x="0"
+         y="0"
+         ry="9.9258823"
+         rx="9.9258823" />
     </g>
   </g>
 </svg>

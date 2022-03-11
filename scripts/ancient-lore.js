@@ -498,6 +498,7 @@ class AncientLoreGame extends BasicGame {
     const displayOthersActions = m.activity instanceof TurnActivity;
     this.playerList.update(m.peers, m.players, displayOthersActions);
     this.board.updateLocations(m.myPlayerId, m.locations);
+    this.board.updateProclaimedLore(m.proclaimedLore);
   }
 }
 
@@ -586,9 +587,10 @@ class PlayerList  {
 class AncientLoreBoardUpdater {
   constructor(boardElement) {
     this.board = boardElement;
+    this.colours = generateHslaColors(60, 30, 1.0, 6);
+    this.proclaimedLoreArea; // Set in loadBoard.
     this.locationHighlighter; // Set in loadBoard.
     this.locations; // Set in loadBoard.
-    this.colours = generateHslaColors(60, 30, 1.0, 6);
   }
 
   loadBoard(options) {
@@ -599,6 +601,8 @@ class AncientLoreBoardUpdater {
     } else if (options.boardSelection == "basic-5-settlement") {
       this.board.innerHTML = board5Html.trim();
     }
+
+    this.proclaimedLoreArea = this.makeProclaimedLoreArea();
 
     let locationElements = this.board.querySelectorAll(".settlement");
     let numLocations = locationElements.length;
@@ -622,8 +626,6 @@ class AncientLoreBoardUpdater {
       }
 
       location.loreDisplayArea = displayAreas.loreDisplayArea;
-      // These will be created on demand in updateLoreInLocation.
-      location.loreDisplays = []; 
 
       this.locations.push(location);
     }
@@ -689,14 +691,31 @@ class AncientLoreBoardUpdater {
     if (myPlayerId != undefined && myPlayerId >= 0) {
       showLoreType = modelLocation.players[myPlayerId].numUnits > 0;
     }
-    let loreDisplays = boardLocation.loreDisplays;
     let lorePieces = modelLocation.lorePieces;
+    this.updateLoreInArea(
+      showLoreType, 
+      boardLocation.loreDisplayArea, 
+      lorePieces
+    );
+  }
+
+  updateProclaimedLore(proclaimedLore) {
+    if (this.proclaimedLoreArea) {
+      this.updateLoreInArea(true, this.proclaimedLoreArea, proclaimedLore);
+    }
+  }
+
+  updateLoreInArea(
+    showLoreType,
+    loreDisplayArea,
+    lorePieces
+  ) {
+    let loreDisplays = loreDisplayArea.children;
     // Create new lore displays as necessary.
     while (loreDisplays.length < lorePieces.length) {
       let loreDisplay = this.makeLoreDisplay(location);
       loreDisplay.loreI = loreDisplays.length;
-      loreDisplays.push(loreDisplay);
-      boardLocation.loreDisplayArea.appendChild(loreDisplay);
+      loreDisplayArea.appendChild(loreDisplay);
     }
     for (let i = 0; i < lorePieces.length; ++i) {
       const lorePiece = lorePieces[i];
@@ -794,6 +813,23 @@ class AncientLoreBoardUpdater {
     group.appendChild(foreignObject);
     parent.appendChild(group);
     return displayAreas;
+  }
+
+  makeProclaimedLoreArea() {
+    let parent = this.board.querySelector(".proclaimed-lore");
+    const box = parent.firstElementChild.getBBox();
+
+    let foreignObject = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
+    foreignObject.style.width = box.width;
+    foreignObject.style.height = box.height;
+
+    let loreDisplayArea = 
+      this.makeDisplayArea("lore-display-area", box.width, box.height);
+
+    foreignObject.appendChild(loreDisplayArea);
+
+    parent.appendChild(foreignObject);
+    return loreDisplayArea;
   }
 
   makeDisplayArea(name, width, height) {
