@@ -80,6 +80,10 @@ input.location-units {
   justify-content: center;
 }
 
+.unit-display-area div {
+  flex-basis: 4em;
+}
+
 .lore-display-area {
   display: flex;
   flex-direction: row;

@@ -742,8 +742,6 @@ class AncientLoreBoardUpdater {
     let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     // <svg viewBox="-508 54 66 138" width="66" height="138"><g id="g971" class="unit"></g>
     svg.setAttribute("viewBox", "-508 54 66 138");
-    svg.setAttribute("width", "66");
-    svg.setAttribute("height", "138");
 
     const exampleUnit = this.board.querySelector(".examples .unit");
     let unit = exampleUnit.cloneNode(true);
@@ -1486,11 +1484,15 @@ class ConflictTurnActivity extends TurnActivity {
   }
   
   onAcceptAlliance(leadId, withId) {
-    // TODO only process this if it is an appropriate time to be forming
-    // alliances.
-    if (!this.playersAllies[withId].offer == leadId) {
+    // Acceptance must come from the player to which the alliance was 
+    // offered, and no alliance may have more than 3 in it (including leadId).
+    if (
+      !this.playersAllies[withId].offer == leadId ||
+      this.playersAllies[leadId].allies.length >= 2
+    ) {
       return;
     }
+
     this.playersAllies[withId].alliedTo = leadId;
     this.playersAllies[withId].inAlliance = true;
     this.playersAllies[leadId].allies.push(withId);
@@ -3099,7 +3101,9 @@ class AllianceSelection {
       }
     }
 
-    let canAccept = me.alliedTo === undefined;
+    let canAccept = 
+      me.alliedTo === undefined &&
+      me.allies.length < 2;
 
     for (let player of players) {
       if (player.alliedTo !== undefined) {
@@ -3122,7 +3126,11 @@ class AllianceSelection {
       }
 
       let offerCell = document.createElement("td");  
-      if (player.id != me.id && !me.inAlliance) {
+      if (
+        player.id != me.id && 
+        !me.inAlliance && 
+        player.allies.length < 2
+      ) {
         let input = document.createElement("input");
         input.type = "button";
         input.value = "Offer";
