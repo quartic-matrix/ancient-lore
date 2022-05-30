@@ -59,7 +59,7 @@ class StartAncientLoreEvent extends LogEvent {
     let numSettlements = numLocations - 1;
 
     // Distribute the units.
-    const numStartingUnitsPerPlayer = 8;
+    const numStartingUnitsPerPlayer = 4;
     let units = [];
     for (let playerId = 0; playerId < options.players.length; ++playerId) {
       for (let unitI = 0; unitI < numStartingUnitsPerPlayer; ++unitI) {
@@ -1241,6 +1241,12 @@ class MovementTurnActivity extends TurnActivity {
       m.locations[movement.fromId].players[playerId].numUnits -= movement.numUnits;
       m.locations[movement.toId].players[playerId].numUnits += movement.numUnits;
     }
+    // Update keepers.
+    for (let location of m.locations) {
+      if (location.players[playerId].numUnits == 0) {
+        location.players[playerId].hasKeeper = false;
+      }
+    }
   }
 }
 
@@ -1632,7 +1638,11 @@ class ContestTurnActivityCoordinator extends TurnActivityCoordinator {
   }
 
   update(v, m) {
-    v.generator.updateAlliances(this.playersAllies);
+    let numCardsPerPlayer = [];
+    for (const player of m.players) {
+      numCardsPerPlayer.push(player.cardSelection.length);
+    }
+    v.generator.updateAlliances(this.playersAllies, numCardsPerPlayer);
     
     // TODO Similar code to ActionSelectionActivityCoordinator::update
     if (!this.isInExtraTime && this.activity.isInExtraTime) {
@@ -2172,8 +2182,8 @@ class AncientLoreEventGenerator {
     this.eventLog.add(acceptAllianceEvent);
   }
 
-  updateAlliances(playersAllies) {
-    this.input.updateAlliances(playersAllies);
+  updateAlliances(playersAllies, numCardsPerPlayer) {
+    this.input.updateAlliances(playersAllies, numCardsPerPlayer);
   }
 }
 
@@ -2411,8 +2421,8 @@ class AncientLoreInputCollector {
     this.allianceSelection.start(playersAllies, myPlayerId, onOfferFn, onAcceptFn);
   }
 
-  updateAlliances(playersAllies) {
-    this.allianceSelection.update(playersAllies);
+  updateAlliances(playersAllies, numCardsPerPlayer) {
+    this.allianceSelection.update(playersAllies, numCardsPerPlayer);
   }
 
   cancelOngoingSelection() {
@@ -3040,7 +3050,7 @@ class AllianceSelection {
     this.update(playersAllies);
   }
 
-  update(playersAllies) {
+  update(playersAllies, numCardsPerPlayer) {
     /**
      *  per player {
      *    id: ;
@@ -3166,9 +3176,24 @@ class AllianceSelection {
         acceptCell.appendChild(nameP);
       }
 
+      let cardsCell = document.createElement("td");
+      let cardsSpan = document.createElement("span");
+      let numCards = 0;
+      if (numCardsPerPlayer) {
+        numCards = numCardsPerPlayer[player.id];
+      }
+      cardsSpan.innerHTML = numCards.toString();
+      if (numCards == 1) {
+        cardsSpan.innerHTML += " card";
+      } else {
+        cardsSpan.innerHTML += " cards";
+      }
+      cardsCell.appendChild(cardsSpan);
+
       tableRow.appendChild(nameCell);
       tableRow.appendChild(offerCell);
       tableRow.appendChild(acceptCell);
+      tableRow.appendChild(cardsCell);
       if (player.id == me.id) {
         tableBody.insertBefore(tableRow, tableBody.firstChild);
       } else {
