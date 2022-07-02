@@ -497,8 +497,11 @@ class AncientLoreGame extends BasicGame {
     
     const displayOthersActions = m.activity instanceof TurnActivity;
     this.playerList.update(m.peers, m.players, displayOthersActions);
+
     this.board.updateLocations(m.myPlayerId, m.locations);
     this.board.updateProclaimedLore(m.proclaimedLore);
+    
+    this.inputCollector.updateExtraCardsArea(m.players, m.myPlayerId);
   }
 }
 
@@ -1165,14 +1168,18 @@ class ExecutingActionsActivity extends Activity {
         break;
       }
       case "invade": {
-        console.log('TODO Invade'); turn.onFinishedFn(m);
+        console.log('TODO Invade');
+        m.activity = { isValid: false };
         break;
       }
       default: {
         console.log('Invalid action');
-        turn.onFinishedFn(m);
+        m.activity = { isValid: false };
         break;
       }
+    }
+    if (m.activity.isValid === false) {
+      turn.onFinishedFn(m);
     }
   }
   
@@ -1284,6 +1291,10 @@ class ProclaimTurnActivity extends TurnActivity {
     super(m, turn);
 
     this.location = m.locations[turn.locationId];
+
+    if (!this.location.players[turn.playerId].hasKeeper) {
+      return { isValid: false }; // This is not a valid turn, skip it.
+    }
 
     this.playersWithKeeper = [];
     for (let i = 0; i < this.location.players.length; ++i) {
@@ -1421,6 +1432,11 @@ class ProclaimTurnVoteActivityCoordinator extends TurnActivityCoordinator {
 class RegroupTurnActivity extends MovementTurnActivity {
   constructor(m, turn) {
     super(m, turn);
+
+    let location = m.locations[turn.locationId];
+    if (location.players[turn.playerId].numUnits == 0) {
+      return { isValid: false }; // This is not a valid turn, skip it.
+    }
   }
   
   makeCoordinator() {
@@ -1464,14 +1480,18 @@ class ConflictTurnActivity extends TurnActivity {
     this.playersAllies = [];
     
     for (let playerId = 0; playerId < m.players.length; ++playerId) {
-      this.playersAllies.push({
-        'id': playerId,
-        'name': m.players[playerId].name,
-        'inAlliance': false,
-        'allies': [],
-        'alliedTo': undefined,
-        'offer': undefined
-      });
+      if (this.isPlayerInvolved(m, playerId)) {
+        this.playersAllies.push({
+          'id': playerId,
+          'name': m.players[playerId].name,
+          'inAlliance': false,
+          'allies': [],
+          'alliedTo': undefined,
+          'offer': undefined
+        });
+      } else {
+        this.playersAllies.push(undefined);
+      }
     }
   }
 
@@ -1503,6 +1523,9 @@ class ConflictTurnActivity extends TurnActivity {
     this.playersAllies[withId].inAlliance = true;
     this.playersAllies[leadId].allies.push(withId);
     this.playersAllies[leadId].inAlliance = true;
+
+    // A lead ally may not make offers, so clear any existing offer.
+    this.playersAllies[leadId].offer = undefined;
   }
 
   onConflictCardSelection(playerId, cards, isReady, isTimeOver, m) {
@@ -1515,7 +1538,9 @@ class ConflictTurnActivity extends TurnActivity {
 
     let isEveryoneReady = true;
     let isTimeOverForEveryone = true;
-    for (let player of m.players) {
+    for (let playerAllies of this.playersAllies) {
+      if (playerAllies == undefined) continue;
+      let player = m.players[playerAllies.id];
       if (!player.isReady) {
         isEveryoneReady = false;
       }
@@ -1558,13 +1583,14 @@ class ConflictTurnActivity extends TurnActivity {
     let keyPlayers = [];
     keyPlayers.push(turn.playerId);
     for (let player of this.playersAllies) {
-      if (location.players[player.id].numUnits > 0) {
+      if (player && location.players[player.id].numUnits > 0) {
         keyPlayers.push(player.id);
       }
     }
 
     let alliances = [];
     for (const player of this.playersAllies) {
+      if (!player) continue;
       if (!player.inAlliance || player.allies.length > 0) {
         let isValid = keyPlayers.includes(player.id);
         for (let i = 0; !isValid && i < player.allies.length; ++i) {
@@ -1613,6 +1639,15 @@ class ConflictTurnActivity extends TurnActivity {
 class ContestTurnActivity extends ConflictTurnActivity {
   constructor(m, turn) {
     super(m, turn);
+
+    if (!this.isPlayerInvolved(m, turn.playerId)) {
+      return { isValid: false }; // This is not a valid turn, skip it.
+    }
+  }
+
+  isPlayerInvolved(m, playerId) {
+    let location = m.locations[this.turn.locationId];
+    return location.players[playerId].numUnits > 0;
   }
 
   makeCoordinator() {
@@ -1625,14 +1660,18 @@ class ContestTurnActivityCoordinator extends TurnActivityCoordinator {
     super(activity);
     this.isInExtraTime = false;
     this.activity = activity;
-    this.playersAllies = activity.playersAllies
+    this.playersAllies = activity.playersAllies;
   }
 
   isMatchingActivity(activity) {
     return activity instanceof ContestTurnActivity;
   }
   
-  doBegin(v, m) {
+  doBegin(v, m) {  
+    let location = m.locations[this.turn.locationId];
+    this.myPlayerIsInvolved = location.players[m.myPlayerId].numUnits > 0;
+    if (!this.myPlayerIsInvolved) return;
+
     let extraCards = m.players[m.myPlayerId].extraCards;
     v.generator.beginContest(extraCards, this.playersAllies);
   }
@@ -1929,7 +1968,7 @@ class AncientLoreEventGenerator {
 
     this.input.startSelectingAnAction(onSelectionChanges);
     this.input.showReadyOption(onDoneFn);
-    this.input.startCountdown(10000, onDoneFn); // TODO 30000
+    this.input.startCountdown(1000, onDoneFn); // TODO 30000
   }
 
   sendActionSelection(action, locationId) {
@@ -2128,11 +2167,23 @@ class AncientLoreEventGenerator {
     let isReady = false;
     let isTimeOver = false;
     let cards = [];
+    let numberSelection = [];
+    let extraSelection = [];
     let onConflictCardSelectedFn = (cardSelection) => {
       cards = cardSelection;
       this.sendConflictCardSelection(cards, isReady, isTimeOver);
     };
-    this.input.startConflictCardSelection(extraCards, onConflictCardSelectedFn);
+    let onNumberCardSelectedFn = (cardSelection) => {
+      numberSelection = cardSelection;
+      onConflictCardSelectedFn(numberSelection.concat(extraSelection));
+    };
+    let onExtraCardSelectedFn = (cardSelection) => {
+      extraSelection = cardSelection;
+      onConflictCardSelectedFn(numberSelection.concat(extraSelection));
+    };
+    this.input.startConflictCardSelection(
+      extraCards, onNumberCardSelectedFn, onExtraCardSelectedFn
+    );
 
     this.input.showReadyOption(() => {
       isReady = true;
@@ -2270,6 +2321,7 @@ class AncientLoreInputCollector {
     this.overlay = rootElement.querySelector(".input-overlay");
     this.board = rootElement.querySelector(".board");
     this.cardsArea = rootElement.querySelector(".cards-area");
+    this.cardsAreaColumn = rootElement.querySelector(".cards-area-column");
 
     this.voteYesButton = rootElement.querySelector(".flow-control-area .vote-yes.button");
     this.voteNoButton = rootElement.querySelector(".flow-control-area .vote-no.button");
@@ -2290,6 +2342,7 @@ class AncientLoreInputCollector {
     this.unitsToMoveSelection = new UnitsToMoveSelection(this.overlay, this.board);
     this.allianceSelection = new AllianceSelection(this.overlay);
     this.conflictCardSelection = new ConflictCardSelection(this.cardsArea);
+    this.extraCardSelection = new ExtraCardSelection(this.cardsAreaColumn);
     this.countdown;
   }
 
@@ -2318,6 +2371,14 @@ class AncientLoreInputCollector {
 
   onStartGame() {
     this.settlementHighlighter = new SettlementHighlighter(this.board);
+  }
+
+  updateExtraCardsArea(players, myPlayerId) {
+    if (myPlayerId == undefined) return;
+    if (players.length <= myPlayerId) return;
+    const extraCards = players[myPlayerId].extraCards;
+    if (extraCards == undefined) return;
+    this.extraCardSelection.update(extraCards);
   }
 
   startCountdown(timeInMs, onDoneFn) {
@@ -2412,8 +2473,11 @@ class AncientLoreInputCollector {
     setTimeout(() => { voteDisplay.cancel(); }, 5000);
   }
 
-  startConflictCardSelection(extraCards, onConflictCardSelectedFn) {
+  startConflictCardSelection(
+    extraCards, onConflictCardSelectedFn, onExtraCardSelectedFn
+  ) {
     this.conflictCardSelection.start(extraCards, onConflictCardSelectedFn);
+    this.extraCardSelection.start(extraCards, onExtraCardSelectedFn);
   }
 
   startAllianceSelection(playersAllies, myPlayerId, onOfferFn, onAcceptFn) {
@@ -2443,6 +2507,7 @@ class AncientLoreInputCollector {
     this.bonusCardDisplay.cancel();
     this.unitsToMoveSelection.cancel();
     this.conflictCardSelection.cancel();
+    this.extraCardSelection.cancel();
     this.allianceSelection.cancel();
     
     if (this.countdown) {
@@ -2536,6 +2601,26 @@ class CardSelection {
   }
 }
 
+class CardSelectionVertical extends CardSelection {
+  constructor(cardsArea) {
+    super(cardsArea);
+  }
+
+  deselect(card) {
+    card.isSelected = false;
+    card.querySelector(".border").style.stroke = "#6d0000"; 
+    card.style.paddingLeft = "5%";
+    card.style.paddingRight = "0%";
+  }
+
+  select(card) {
+    card.isSelected = true;
+    card.querySelector(".border").style.stroke = "#ff0000";
+    card.style.paddingLeft = "0%";
+    card.style.paddingRight = "5%";
+  }
+}
+
 class ConflictCardSelection extends CardSelection {
   constructor(cardsArea) {
     super(cardsArea);
@@ -2552,10 +2637,6 @@ class ConflictCardSelection extends CardSelection {
     this.initCardElement("5-card", number5CardHtml.trim());
     this.initCardElement("6-card", number6CardHtml.trim());
     this.initCardElement("7-card", number7CardHtml.trim());
-
-    for (const extraCard of extraCards) {
-      this.initCardElement(extraCard);
-    }
   }
 
   start(extraCards, onConflictCardSelected) {
@@ -2582,6 +2663,54 @@ class ConflictCardSelection extends CardSelection {
 
     if (this.onConflictCardSelected) {
       this.onConflictCardSelected(this.cardSelection);
+    }
+  }
+}
+
+class ExtraCardSelection extends CardSelectionVertical {
+  constructor(cardsArea) {
+    super(cardsArea);
+    this.isSelecting = false;
+  }
+  
+  update(extraCards) {
+    // Recreating the elements will clear the selection.
+    if (this.isSelecting) return;
+
+    this.removeAll();
+    for (const extraCard of extraCards) {
+      this.initCardElement(extraCard);
+    }
+    this.showAll();
+  }
+
+  start(extraCards, onExtraCardSelected) {
+    this.cardSelection = [];
+    this.isSelecting = true;
+    this.onExtraCardSelected = onExtraCardSelected;
+    this.update(extraCards);
+  }
+
+  cancel() {
+    this.isSelecting = false;
+    this.onExtraCardSelected = undefined;
+    this.deselectAll();
+  }
+
+  onSelected(card, cardType) {
+    if (!this.isSelecting) return;
+
+    if (card.isSelected) {
+      const index = this.cardSelection.indexOf(cardType);
+      this.cardSelection.splice(index, 1);
+      this.deselect(card);
+    } else {
+      this.cardSelection.push(cardType);
+      this.select(card);
+    }
+
+    if (this.onExtraCardSelected) {
+      this.onExtraCardSelected(this.cardSelection);
     }
   }
 }
@@ -3102,7 +3231,12 @@ class AllianceSelection {
     let tableBody = document.createElement("tbody");
     
     let me = players[this.myPlayerId];
-    if (me === undefined) {
+    let canAccept = false;
+    if (me !== undefined) {
+      canAccept = 
+        me.alliedTo === undefined &&
+        me.allies.length < 2;
+    } else {
       // I'm just an observer.
       me = {
         'id': -1,
@@ -3111,12 +3245,8 @@ class AllianceSelection {
       }
     }
 
-    let canAccept = 
-      me.alliedTo === undefined &&
-      me.allies.length < 2;
-
     for (let player of players) {
-      if (player.alliedTo !== undefined) {
+      if (!player || player.alliedTo !== undefined) {
         continue;
       }
 
@@ -3177,18 +3307,11 @@ class AllianceSelection {
       }
 
       let cardsCell = document.createElement("td");
-      let cardsSpan = document.createElement("span");
-      let numCards = 0;
-      if (numCardsPerPlayer) {
-        numCards = numCardsPerPlayer[player.id];
+      cardsCell.appendChild(this.cardsSpan(numCardsPerPlayer, player.id));
+      for (let ally of player.allies) {
+        cardsCell.appendChild(document.createElement("br"));
+        cardsCell.appendChild(this.cardsSpan(numCardsPerPlayer, players[ally].id));
       }
-      cardsSpan.innerHTML = numCards.toString();
-      if (numCards == 1) {
-        cardsSpan.innerHTML += " card";
-      } else {
-        cardsSpan.innerHTML += " cards";
-      }
-      cardsCell.appendChild(cardsSpan);
 
       tableRow.appendChild(nameCell);
       tableRow.appendChild(offerCell);
@@ -3202,6 +3325,21 @@ class AllianceSelection {
     }
     this.table.appendChild(tableBody);
     this.overlay.appendChild(this.table);
+  }
+
+  cardsSpan(numCardsPerPlayer, playerId) {
+    let cardsSpan = document.createElement("span");
+    let numCards = 0;
+    if (numCardsPerPlayer) {
+      numCards = numCardsPerPlayer[playerId];
+    }
+    cardsSpan.innerHTML = numCards.toString();
+    if (numCards == 1) {
+      cardsSpan.innerHTML += " card";
+    } else {
+      cardsSpan.innerHTML += " cards";
+    }
+    return cardsSpan;
   }
 
   cancel() {

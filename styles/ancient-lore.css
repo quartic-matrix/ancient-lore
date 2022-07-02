@@ -3,6 +3,20 @@
   visibility: hidden;
 }
 
+.game-area {
+  position: relative;
+  height: auto;
+  display: flex;
+  flex-direction: row;
+}
+
+.middle {
+  position: relative;
+  height: auto;
+  display: flex;
+  flex-direction: row;
+}
+
 .input-overlay table {
   background-color: rgba(255, 255, 255, 0.6);
 }
@@ -16,6 +30,14 @@
 
 .board {
   height: auto;
+}
+
+.right-side {
+  position: relative;
+  width: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 .footer {

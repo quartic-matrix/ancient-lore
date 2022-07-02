@@ -10,9 +10,15 @@
       <div class="players" >
       </div>  
       <div class="board-area">
-        <div class="input-overlay" style="position: absolute;">
-        </div>
-        <div class="board">
+        <div class="middle">
+          <div>
+            <div class="input-overlay" style="position: absolute;">
+            </div>
+            <div class="board">
+            </div>
+          </div>
+          <div class="right-side cards-area-column">
+          </div>
         </div>
         <div class="footer">
           <div class="cards-area">
@@ -52,7 +58,7 @@
         const channels = ["events"];
 
         if (typeof fakeServer !== "undefined") {
-          for (let index = 1; index < 3; index++) {
+          for (let index = 1; index < 4; index++) {
             domElements.push(cloneDomElement(domElements[0], "game-" + index));
           }
           games.push(makeAncientLoreGame(
@@ -63,6 +69,9 @@
           ));
           games.push(makeAncientLoreGame(
             swarmIds[0], channels[0], domElements[2], getPlayerName() + "-2"
+          ));
+          games.push(makeAncientLoreGame(
+            swarmIds[0], channels[0], domElements[3], getPlayerName() + "-3"
           ));
         } else {
           games.push(makeAncientLoreGame(
