@@ -1163,7 +1163,11 @@ class ExecutingActionsActivity extends Activity {
       }
     });
 
-    this.beginTurn(m);
+    if (this.turns.length > 0) {
+      this.beginTurn(m);
+    } else {
+      this.endRound(m);
+    }
   }
 
   beginTurn(m) {
@@ -1784,6 +1788,10 @@ class ConvertActivity extends TurnActivity {
         location.players[fromPlayerId].numUnits--;
         location.players[toPlayerId].numUnits++;
       }
+      // Remove the convert card from the player's hand.
+      let extraCards = m.players[toPlayerId].extraCards;
+      let index = extraCards.findIndex((c) => {return c == "convert";});
+      extraCards.splice(index, 1);
     }
 
     // Mark the conversion as done.
@@ -1820,6 +1828,7 @@ class ConvertActivityCoordinator extends TurnActivityCoordinator {
       );
     } else {
       v.generator.clearSelectionOptions();
+      v.board.updateLocationHighlight(this.turn.locationId);
     }
   }
 
