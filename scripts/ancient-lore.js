@@ -429,6 +429,48 @@ class ConflictCardSelectionEvent extends LogEvent {
   }
 }
 
+class ConvertFollowerEvent extends LogEvent {
+  
+  static type() {
+    return "ancient-lore-convert-follower";
+  }
+
+  static makeFromData(objectFromData) {
+    return new ConvertFollowerEvent(
+      objectFromData.timestamp, 
+      objectFromData.peerId, 
+      objectFromData.fromPlayerId, 
+      objectFromData.toPlayerId, 
+      objectFromData.locationId
+    );
+  }
+
+  static makeNow(
+    timestampOffset, peerId, fromPlayerId, toPlayerId, locationId
+  ) {
+    return new ConvertFollowerEvent(
+      LogEvent.makeTimestamp(timestampOffset),
+      peerId,
+      fromPlayerId, 
+      toPlayerId, 
+      locationId
+    );
+  }
+
+  constructor(timestamp, peerId, fromPlayerId, toPlayerId, locationId) {
+    super(timestamp, peerId, ConvertFollowerEvent.type());
+    this.fromPlayerId = fromPlayerId;
+    this.toPlayerId = toPlayerId; 
+    this.locationId = locationId;
+  }
+
+  notify(eventListener) {
+    eventListener.onConvertFollower(
+      this.fromPlayerId, this.toPlayerId, this.locationId
+    );
+  }
+}
+
 class AncientLoreGame extends BasicGame {
   constructor (eventLog, domElement, playerName) {
     super(eventLog);
@@ -1497,7 +1539,7 @@ class ConflictTurnActivity extends TurnActivity {
 
   onContinue(playerId, m) {
     if (!this.isInExtraTime) return;
-    this.resolveConflict(m);
+    this.convertFollowers(m);
   }
 
   onOfferAlliance(fromId, toId) {
@@ -1550,10 +1592,17 @@ class ConflictTurnActivity extends TurnActivity {
     }
 
     if (isEveryoneReady) {
-      this.resolveConflict(m);
+      this.convertFollowers(m);
     } else if (isTimeOverForEveryone) {
       this.isInExtraTime = true;
     }
+  }
+
+  convertFollowers(m) {
+    m.activity = new ConvertActivity(
+      m, this.turn, this.playersAllies, this.resolveConflict.bind(this)
+    );
+    m.activity.begin(m);
   }
 
   resolveConflict(m) {
@@ -1691,6 +1740,100 @@ class ContestTurnActivityCoordinator extends TurnActivityCoordinator {
   }
 }
 
+class ConvertActivity extends TurnActivity {
+  constructor(m, turn, playersAllies, resolveConflictFn) {
+    super(m, turn);
+
+    this.playersAllies = playersAllies;
+    this.resolveConflictFn = resolveConflictFn;
+  }
+
+  begin(m) {
+    this.conversions = this.identifyConversions(m);
+    this.currentConversionI = 0;
+
+    if (this.conversions.length == 0) {
+      this.resolveConflictFn(m);
+    }
+  }
+
+  identifyConversions(m) {
+    let conversions = [];
+    for (let playerId = 0; playerId < m.players.length; ++playerId) {
+      let player = m.players[playerId];
+      for (let card of player.cardSelection) {
+        if (card == "convert") {
+          conversions.push({playerId: playerId, rank: player.rank});
+        }
+      }
+    }
+    conversions.sort((a, b) => { return a.rank - b.rank; });
+    return conversions;
+  }
+
+  makeCoordinator() {
+    return new ConvertActivityCoordinator(this);
+  }
+
+  onConvertFollower(fromPlayerId, toPlayerId, locationId, m) {
+    // Check if there was anyone to convert.
+    if (fromPlayerId != undefined) {
+      // Adjust the numUnits per player.
+      let location = m.locations[locationId];
+      if (location.players[fromPlayerId].numUnits) {
+        location.players[fromPlayerId].numUnits--;
+        location.players[toPlayerId].numUnits++;
+      }
+    }
+
+    // Mark the conversion as done.
+    ++this.currentConversionI;
+    if (this.currentConversionI >= this.conversions.length) {
+      this.resolveConflictFn(m);
+    }
+  }
+
+  currentPlayerId() {
+    return this.conversions[this.currentConversionI].playerId;
+  }
+}
+
+class ConvertActivityCoordinator extends TurnActivityCoordinator {
+  constructor(activity) {
+    super(activity);
+    this.activity = activity;
+  }
+
+  isMatchingActivity(activity) {
+    return activity instanceof ConvertActivity;
+  }
+  
+  doBegin(v, m) {  
+  }
+
+  update(v, m) {
+    if (m.myPlayerId == this.activity.currentPlayerId()) {
+      v.generator.askToConvertAFollowerTo(
+        m.myPlayerId, 
+        m.locations[this.activity.turn.locationId], 
+        this.identifyMyAllies(m.myPlayerId)
+      );
+    } else {
+      v.generator.clearSelectionOptions();
+    }
+  }
+
+  identifyMyAllies(myPlayerId) {
+    let playersAllies = this.activity.playersAllies;
+    let myAllies = playersAllies[myPlayerId];
+    if (myAllies.alliedTo == undefined) {
+      return [myPlayerId, ...myAllies.allies];
+    } else {
+      return [myAllies.alliedTo, ...playersAllies[myAllies.alliedTo].allies];
+    }
+  }
+}
+
 class FinishedActivity extends Activity {
   constructor(m, winners) {
     super(m);
@@ -1732,7 +1875,8 @@ class AncientLoreModel extends LogEventConsumer {
       ProclaimLoreVoteEvent,
       OfferAllianceEvent,
       AcceptAllianceEvent,
-      ConflictCardSelectionEvent
+      ConflictCardSelectionEvent,
+      ConvertFollowerEvent
     ]);
     this.listeners = [];
     this.myPlayerName = playerName;
@@ -1836,6 +1980,12 @@ class AncientLoreModel extends LogEventConsumer {
       this.activity.onConflictCardSelection(playerId, cards, isReady, isTimeOver, this);
     }
   }
+
+  onConvertFollower(fromPlayerId, toPlayerId, locationId) {
+    if (typeof this.activity.onConvertFollower == 'function') {
+      this.activity.onConvertFollower(fromPlayerId, toPlayerId, locationId, this);
+    }
+  }
 }
 
 class CardDeck {
@@ -1908,6 +2058,7 @@ class AncientLoreEventGenerator {
     this.eventLog.registerEventType(OfferAllianceEvent);
     this.eventLog.registerEventType(AcceptAllianceEvent);
     this.eventLog.registerEventType(ConflictCardSelectionEvent);
+    this.eventLog.registerEventType(ConvertFollowerEvent);
   }
 
   offerToStartGame() {
@@ -2236,6 +2387,19 @@ class AncientLoreEventGenerator {
   updateAlliances(playersAllies, numCardsPerPlayer) {
     this.input.updateAlliances(playersAllies, numCardsPerPlayer);
   }
+  
+  askToConvertAFollowerTo(toPlayerId, location, allAllies) {
+    this.input.askToConvertAFollowerTo(
+      toPlayerId, location, allAllies, this.sendConvertFollower.bind(this)
+    );
+  }
+
+  sendConvertFollower(fromPlayerId, toPlayerId, locationId) {
+    let event = ConvertFollowerEvent.makeNow(
+      0, this.eventLog.swarm.myId, fromPlayerId, toPlayerId, locationId
+    );
+    this.eventLog.add(event);
+  }
 }
 
 class AncientLoreGameSetup {
@@ -2341,6 +2505,7 @@ class AncientLoreInputCollector {
     this.bonusCardDisplay = new BonusCardDisplay(this.cardsArea);
     this.unitsToMoveSelection = new UnitsToMoveSelection(this.overlay, this.board);
     this.allianceSelection = new AllianceSelection(this.overlay);
+    this.convertSelection = new ConvertSelection(this.board);
     this.conflictCardSelection = new ConflictCardSelection(this.cardsArea);
     this.extraCardSelection = new ExtraCardSelection(this.cardsAreaColumn);
     this.countdown;
@@ -2489,6 +2654,10 @@ class AncientLoreInputCollector {
     this.allianceSelection.update(playersAllies, numCardsPerPlayer);
   }
 
+  askToConvertAFollowerTo(toPlayerId, location, allAllies, onConvertionSelectedFn) {
+    this.convertSelection.start(toPlayerId, location, allAllies, onConvertionSelectedFn);
+  }
+
   cancelOngoingSelection() {
     this.voteYesButton.style.display = "none";
     this.voteNoButton.style.display = "none";
@@ -2509,6 +2678,7 @@ class AncientLoreInputCollector {
     this.conflictCardSelection.cancel();
     this.extraCardSelection.cancel();
     this.allianceSelection.cancel();
+    this.convertSelection.cancel();
     
     if (this.countdown) {
       this.countdown.cancel();
@@ -2763,6 +2933,11 @@ class BoardSelection {
     this.removeClickHandlers();
   }
 
+  addClickHandler(clickHandler) {
+    clickHandler.element.addEventListener("click", clickHandler.fn);
+    this.clickHandlers.push(clickHandler);
+  }
+
   removeClickHandlers() {
     for (let clickHandler of this.clickHandlers) {
       clickHandler.element.removeEventListener("click", clickHandler.fn);
@@ -2792,8 +2967,7 @@ class SettlementSelection extends BoardSelection {
           }
         }
       };
-      clickHandler.element.addEventListener("click", clickHandler.fn);
-      this.clickHandlers.push(clickHandler);
+      this.addClickHandler(clickHandler);
     }
     
     this.highlighter.clear();
@@ -2844,8 +3018,7 @@ class LoreSelection extends BoardSelection {
           }
         }
       };
-      clickHandler.element.addEventListener("click", clickHandler.fn);
-      this.clickHandlers.push(clickHandler);
+      this.addClickHandler(clickHandler);
     }
     
     this.highlighter.clear();
@@ -3345,6 +3518,41 @@ class AllianceSelection {
   cancel() {
     if (this.table) {
       this.table.remove();
+    }
+  }
+}
+
+class ConvertSelection extends BoardSelection {
+  constructor(board) {
+    super();
+    this.board = board;
+  }
+
+  start(toPlayerId, location, allAllies, onConvertionSelectedFn) {
+    // Add an onclick to all the units in location that are not in allAllies.
+    // BoardSelection will clear the onclick when the selection is cancelled.
+    let unitDisplayArea = this.board.querySelector(
+      ".settlement" + location.id + " .unit-display-area"
+    );
+    let options = [];
+    for (let i = 0; i < unitDisplayArea.children.length; ++i) {
+      let unitDiv = unitDisplayArea.children[i];
+      if (location.players[i].numUnits > 0 && !allAllies.includes(i)) {
+        options.push(i);
+        let clickHandler = {
+          element: unitDiv,
+          fn: (event) => {
+            event.stopPropagation();
+            onConvertionSelectedFn(i, toPlayerId, location.id);
+          }
+        };
+        this.addClickHandler(clickHandler);
+      }
+    }
+    if (options.length == 0) {
+      onConvertionSelectedFn(undefined, toPlayerId, location.id);
+    } else if (options.length == 1) {
+      onConvertionSelectedFn(options[0], toPlayerId, location.id);
     }
   }
 }
