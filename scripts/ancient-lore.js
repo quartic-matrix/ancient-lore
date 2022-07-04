@@ -24,6 +24,11 @@ function makeTwoDigits(number) {
   return ("0" + number).slice(-2);
 }
 
+function findAndErase(array, elementValue) {
+  let index = array.indexOf(elementValue);
+  array.splice(index, 1);
+}
+
 class StartAncientLoreEvent extends LogEvent {
 
   static type() {
@@ -1666,7 +1671,14 @@ class ConflictTurnActivity extends TurnActivity {
       let numPlayers = m.players.length;
       for (const playerId of alliance.allies) {
         alliance.strength += location.players[playerId].numUnits;
-        let tieBreaker = numPlayers - m.players[playerId].rank;
+        let player = m.players[playerId];
+        let numPlus2 = player.cardSelection.filter(c => c == "plus2").length;
+        for (let i = 0; i < numPlus2; ++i) {
+          alliance.strength += 2;
+          // Remove a plus2 card from the player's hand.
+          findAndErase(player.extraCards, "plus2");
+        }
+        let tieBreaker = numPlayers - player.rank;
         if (playerId == turn.playerId) {
           tieBreaker = numPlayers + 1;
         }
@@ -1677,12 +1689,21 @@ class ConflictTurnActivity extends TurnActivity {
     // Strongest is placed first.
     alliances.sort((a, b) => { return b.strength - a.strength; });
 
-
+    // Set the keepers.
     for (let player of location.players) {
       player.hasKeeper = false;
     }
     for (let playerId of alliances[0].allies) {
       location.players[playerId].hasKeeper = true;
+    }
+
+    // Send everyone else to backwood.
+    for (let aI = 1; aI < alliances.length; ++aI) {
+      for (let playerId of alliances[aI].allies) {
+        m.locations[0].players[playerId].numUnits +=
+          location.players[playerId].numUnits;
+        location.players[playerId].numUnits = 0;
+      }
     }
 
     this.endTurn();
@@ -1789,9 +1810,7 @@ class ConvertActivity extends TurnActivity {
         location.players[toPlayerId].numUnits++;
       }
       // Remove the convert card from the player's hand.
-      let extraCards = m.players[toPlayerId].extraCards;
-      let index = extraCards.findIndex((c) => {return c == "convert";});
-      extraCards.splice(index, 1);
+      findAndErase(m.players[toPlayerId].extraCards, "convert");
     }
 
     // Mark the conversion as done.
@@ -2832,8 +2851,7 @@ class ConflictCardSelection extends CardSelection {
 
   onSelected(card, cardType) {
     if (card.isSelected) {
-      const index = this.cardSelection.indexOf(cardType);
-      this.cardSelection.splice(index, 1);
+      findAndErase(this.cardSelection, cardType);
       this.deselect(card);
     } else {
       this.cardSelection.push(cardType);
@@ -2880,8 +2898,7 @@ class ExtraCardSelection extends CardSelectionVertical {
     if (!this.isSelecting) return;
 
     if (card.isSelected) {
-      const index = this.cardSelection.indexOf(cardType);
-      this.cardSelection.splice(index, 1);
+      findAndErase(this.cardSelection, cardType);
       this.deselect(card);
     } else {
       this.cardSelection.push(cardType);
@@ -2950,6 +2967,9 @@ class BoardSelection {
   removeClickHandlers() {
     for (let clickHandler of this.clickHandlers) {
       clickHandler.element.removeEventListener("click", clickHandler.fn);
+      if (clickHandler.onRemoveFn) {
+        clickHandler.onRemoveFn();
+      }
     }
     this.clickHandlers = [];
   }
@@ -3548,11 +3568,15 @@ class ConvertSelection extends BoardSelection {
       let unitDiv = unitDisplayArea.children[i];
       if (location.players[i].numUnits > 0 && !allAllies.includes(i)) {
         options.push(i);
+        unitDiv.style.border = "0.2em outset #a0a0a0";
         let clickHandler = {
           element: unitDiv,
           fn: (event) => {
             event.stopPropagation();
             onConvertionSelectedFn(i, toPlayerId, location.id);
+          },
+          onRemoveFn: () => {
+            unitDiv.style.removeProperty('border');
           }
         };
         this.addClickHandler(clickHandler);
