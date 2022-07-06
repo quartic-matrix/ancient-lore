@@ -959,6 +959,20 @@ class TurnActivityCoordinator extends ActivityCoordinator {
   }
 }
 
+class ExtraTimeCoordinator {
+  constructor(activity) {
+    this.activity = activity;
+    this.isInExtraTime = false;
+  }
+
+  updateExtraTime(v) {
+    if (!this.isInExtraTime && this.activity.isInExtraTime) {
+      v.generator.offerToContinueRegardless();
+      this.isInExtraTime = true;
+    }
+  }
+}
+
 class FormingActivity extends Activity {
   constructor(m) {
     super(m);
@@ -1111,7 +1125,7 @@ class ActionSelectionActivityCoordinator extends ActivityCoordinator {
   constructor(activity) {
     super(activity.progressWhenActivityStarted);
     this.activity = activity;
-    this.isInExtraTime = false;
+    this.ExtraTimeCoordinator = new ExtraTimeCoordinator(activity);
   }
 
   isMatchingActivity(activity) {
@@ -1123,10 +1137,7 @@ class ActionSelectionActivityCoordinator extends ActivityCoordinator {
   }
 
   update(v, m) {
-    if (!this.isInExtraTime && this.activity.isInExtraTime) {
-      v.generator.offerToContinueRegardless();
-      this.isInExtraTime = true;
-    }
+    this.ExtraTimeCoordinator.updateExtraTime(v);
   }
 }
 
@@ -1219,8 +1230,7 @@ class ExecutingActionsActivity extends Activity {
         break;
       }
       case "invade": {
-        console.log('TODO Invade');
-        m.activity = { isValid: false };
+        m.activity = new InvadeTurnActivity(m, turn);
         break;
       }
       default: {
@@ -1299,10 +1309,14 @@ class MovementTurnActivity extends TurnActivity {
       m.locations[movement.fromId].players[playerId].numUnits -= movement.numUnits;
       m.locations[movement.toId].players[playerId].numUnits += movement.numUnits;
     }
-    // Update keepers.
+  }
+
+  updateKeepers(m) {
     for (let location of m.locations) {
-      if (location.players[playerId].numUnits == 0) {
-        location.players[playerId].hasKeeper = false;
+      for (let player of location.players) {
+        if (player.numUnits == 0) {
+          player.hasKeeper = false;
+        }
       }
     }
   }
@@ -1319,6 +1333,7 @@ class MoveTurnActivity extends MovementTurnActivity {
 
   onMoveUnits(playerId, movements, m) {
     this.resolveMovement(playerId, movements, m);
+    this.updateKeepers(m);
     this.endTurn();
   }
 }
@@ -1496,6 +1511,7 @@ class RegroupTurnActivity extends MovementTurnActivity {
 
   onMoveUnits(playerId, movements, m) {
     this.resolveMovement(playerId, movements, m);
+    this.updateKeepers(m);
     
     // Reorder the turn order.
     let activeRank = m.players[playerId].rank;
@@ -1546,9 +1562,13 @@ class ConflictTurnActivity extends TurnActivity {
     }
   }
 
+  makeCoordinator() {
+    return new ConflictTurnActivityCoordinator(this);
+  }
+
   onContinue(playerId, m) {
     if (!this.isInExtraTime) return;
-    this.convertFollowers(m);
+    this.beginResolving(m);
   }
 
   onOfferAlliance(fromId, toId) {
@@ -1601,15 +1621,15 @@ class ConflictTurnActivity extends TurnActivity {
     }
 
     if (isEveryoneReady) {
-      this.convertFollowers(m);
+      this.beginResolving(m);
     } else if (isTimeOverForEveryone) {
       this.isInExtraTime = true;
     }
   }
 
-  convertFollowers(m) {
+  convertFollowers(m, nextResolveStepFn) {
     m.activity = new ConvertActivity(
-      m, this.turn, this.playersAllies, this.resolveConflict.bind(this)
+      m, this.turn, this.playersAllies, nextResolveStepFn
     );
     m.activity.begin(m);
   }
@@ -1622,21 +1642,12 @@ class ConflictTurnActivity extends TurnActivity {
      * Select who to convert.
      * Sum up the strength of each.
      * Identify the strongest.
-     * TODO-INVADE Select who is chased away.
+     * TODO-INVADE Select who is chased away, and remove keepers where numUnits == 0.
      * TODO Chase away losers in settlement.
      * Set keepers.
      */
     const turn = this.turn;
     let location = m.locations[turn.locationId];
-
-    // Must be in the settlement to contest it.
-    if (
-      turn.action == 'contest' && 
-      location.players[turn.playerId].numUnits == 0
-    ) {
-      this.endTurn();
-      return; 
-    }
 
     let keyPlayers = [];
     keyPlayers.push(turn.playerId);
@@ -1710,44 +1721,23 @@ class ConflictTurnActivity extends TurnActivity {
   }
 }
 
-class ContestTurnActivity extends ConflictTurnActivity {
-  constructor(m, turn) {
-    super(m, turn);
-
-    if (!this.isPlayerInvolved(m, turn.playerId)) {
-      return { isValid: false }; // This is not a valid turn, skip it.
-    }
-  }
-
-  isPlayerInvolved(m, playerId) {
-    let location = m.locations[this.turn.locationId];
-    return location.players[playerId].numUnits > 0;
-  }
-
-  makeCoordinator() {
-    return new ContestTurnActivityCoordinator(this);
-  }
-}
-
-class ContestTurnActivityCoordinator extends TurnActivityCoordinator {
+class ConflictTurnActivityCoordinator extends TurnActivityCoordinator {
   constructor(activity) {
     super(activity);
-    this.isInExtraTime = false;
+    this.ExtraTimeCoordinator = new ExtraTimeCoordinator(activity);
     this.activity = activity;
     this.playersAllies = activity.playersAllies;
   }
 
   isMatchingActivity(activity) {
-    return activity instanceof ContestTurnActivity;
+    return activity instanceof ConflictTurnActivity;
   }
   
   doBegin(v, m) {  
-    let location = m.locations[this.turn.locationId];
-    this.myPlayerIsInvolved = location.players[m.myPlayerId].numUnits > 0;
-    if (!this.myPlayerIsInvolved) return;
+    if (!this.activity.isPlayerInvolved(m, m.myPlayerId)) return;
 
     let extraCards = m.players[m.myPlayerId].extraCards;
-    v.generator.beginContest(extraCards, this.playersAllies);
+    v.generator.beginConflict(extraCards, this.playersAllies);
   }
 
   update(v, m) {
@@ -1757,11 +1747,7 @@ class ContestTurnActivityCoordinator extends TurnActivityCoordinator {
     }
     v.generator.updateAlliances(this.playersAllies, numCardsPerPlayer);
     
-    // TODO Similar code to ActionSelectionActivityCoordinator::update
-    if (!this.isInExtraTime && this.activity.isInExtraTime) {
-      v.generator.offerToContinueRegardless();
-      this.isInExtraTime = true;
-    }
+    this.ExtraTimeCoordinator.updateExtraTime(v);
   }
 }
 
@@ -1858,6 +1844,132 @@ class ConvertActivityCoordinator extends TurnActivityCoordinator {
       return [myPlayerId, ...myAllies.allies];
     } else {
       return [myAllies.alliedTo, ...playersAllies[myAllies.alliedTo].allies];
+    }
+  }
+}
+
+class ContestTurnActivity extends ConflictTurnActivity {
+  constructor(m, turn) {
+    super(m, turn);
+
+    if (!this.isPlayerInvolved(m, turn.playerId)) {
+      return { isValid: false }; // This is not a valid turn, skip it.
+    }
+  }
+
+  isPlayerInvolved(m, playerId) {
+    let location = m.locations[this.turn.locationId];
+    return location.players[playerId].numUnits > 0;
+  }
+  
+  beginResolving(m) {
+    this.convertFollowers(m, this.resolveConflict.bind(this));
+  }
+}
+
+class InvadeTurnActivity extends ConflictTurnActivity {
+  constructor(m, turn) {
+    super(m, turn);
+
+    if (!this.isPlayerInvolved(m, turn.playerId)) {
+      return { isValid: false }; // This is not a valid turn, skip it.
+    }
+  }
+
+  isPlayerInvolved(m, playerId) {
+    let turnLocationId = this.turn.locationId;
+    for (const location of m.locations) {
+      if (location.id == turnLocationId || location.isConnectedTo[turnLocationId]) {
+        if (location.players[playerId].numUnits > 0) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+  
+  beginResolving(m) {
+    let finalResolveStepFn = this.resolveConflict.bind(this);
+    let nextResolveStepFn = () => {
+      this.convertFollowers(m, finalResolveStepFn);
+    }
+    m.activity = new InvadeMoveTurnActivity(m, this.turn, nextResolveStepFn);
+  }
+}
+
+class InvadeMoveTurnActivity extends MovementTurnActivity {
+  constructor(m, turn, nextResolveStepFn) {
+    super(m, turn);
+    this.nextResolveStepFn = nextResolveStepFn;
+    this.numUnitsToMovePerPlayer = this.identifyNumUnitsToMovePerPlayer(m);
+  }
+  
+  identifyNumUnitsToMovePerPlayer(m) {
+    let numUnitsToMovePerPlayer = [];
+
+    for (const player of m.players) {
+      let numUnitsToMove = 0;
+      for (const card of player.cardSelection) {
+        numUnitsToMove += this.cardToNumUnits(card);
+      }
+      numUnitsToMovePerPlayer.push(numUnitsToMove);
+    }
+
+    return numUnitsToMovePerPlayer;
+  }
+
+  cardToNumUnits(card) {
+    switch (card) {
+      case "1-card": return 1;
+      case "2-card": return 2;
+      case "3-card": return 3;
+      case "4-card": return 4;
+      case "5-card": return 5;
+      case "6-card": return 6;
+      case "7-card": return 7;
+
+      default: return 0;
+    }
+  }
+
+  makeCoordinator() {
+    return new InvadeMoveTurnActivityCoordinator(this);
+  }
+
+  onMoveUnits(playerId, movements, m) {
+    this.resolveMovement(playerId, movements, m);
+
+    // Each player who needs to only moves once, but they will not move all
+    // the units they committed to iff they cannot move that many units.
+    this.numUnitsToMovePerPlayer[playerId] = 0;
+    
+    // Check whether everyone has moved yet, if so resolve the conflict.
+    let isEveryoneReady = true;
+    for (let numUnitsToMove of this.numUnitsToMovePerPlayer) {
+      if (numUnitsToMove > 0) {
+        isEveryoneReady = false;
+      }
+    }
+    if (isEveryoneReady) {
+      this.nextResolveStepFn();
+    }
+  }
+}
+
+class InvadeMoveTurnActivityCoordinator extends TurnActivityCoordinator {
+  constructor(activity) {
+    super(activity);
+    this.numUnitsToMovePerPlayer = activity.numUnitsToMovePerPlayer;
+  }
+
+  isMatchingActivity(activity) {
+    return activity instanceof InvadeMoveTurnActivity;
+  }
+
+  doBegin(v, m) {
+    let myNumUnitsToMove = this.numUnitsToMovePerPlayer[m.myPlayerId];
+    if (myNumUnitsToMove > 0) {
+      v.generator.beginInvadeMove(this.turn, m.locations, myNumUnitsToMove);
     }
   }
 }
@@ -2179,11 +2291,7 @@ class AncientLoreEventGenerator {
       return location.players[this.myPlayerId].numUnits > 0;
     }
 
-    let isMoveFromAllowedFn = (location) => {
-      return true;
-    }
-
-    this.offerToMoveUnits(turn, locations, isMoveFromAllowedFn, isMoveToAllowedFn);
+    this.offerToMoveUnits(turn, locations, undefined, isMoveToAllowedFn);
   }
 
   beginMove(turn, locations) {
@@ -2191,19 +2299,48 @@ class AncientLoreEventGenerator {
       return; 
     }
 
-    // Regroup is only allowed in locations where the player has a unit.
-    let isMoveToAllowedFn = (location) => {
-      return true;
-    }
-
     let isMoveFromAllowedFn = (location) => {
       return location.isConnectedTo[turn.locationId];
     }
 
-    this.offerToMoveUnits(turn, locations, isMoveFromAllowedFn, isMoveToAllowedFn);
+    this.offerToMoveUnits(turn, locations, isMoveFromAllowedFn);
   }
 
-  offerToMoveUnits(turn, locations, isMoveFromAllowedFn, isMoveToAllowedFn) {
+  beginInvadeMove(turn, locations, numUnitsToMove) {
+    let isMoveFromAllowedFn = (location) => {
+      return location.isConnectedTo[turn.locationId];
+    }
+    
+    let maxUnitsPerSettlement = 
+      this.maxUnitsPerSettlement(locations, isMoveFromAllowedFn);
+    let maxCanMove = 0;
+    for (const value of maxUnitsPerSettlement) {
+      maxCanMove += value;
+    }
+    numUnitsToMove = Math.min(numUnitsToMove, maxCanMove);
+
+    let canBeReadyFn = (numUnitsFromSettlements) => {
+      let numMoved = 0;
+      for (const value of numUnitsFromSettlements.values()) {
+        numMoved += value;
+      }
+      return numMoved == numUnitsToMove 
+    }
+
+    this.offerToMoveUnits(
+      turn, locations, isMoveFromAllowedFn, undefined, canBeReadyFn
+    );
+  }
+
+  offerToMoveUnits(
+    turn, 
+    locations, 
+    isMoveFromAllowedFn = (location) => { return true; }, 
+    isMoveToAllowedFn = (location) => { return true; }, 
+    canBeReadyFn = (numUnitsFromSettlements) => { return true; }
+  ) {
+    let maxUnitsPerSettlement = 
+      this.maxUnitsPerSettlement(locations, isMoveFromAllowedFn);
     let numUnitsFromSettlements = new Map();
     let onDoneFn = () => {
       this.sendMoveUnits(turn.locationId, numUnitsFromSettlements);
@@ -2216,15 +2353,18 @@ class AncientLoreEventGenerator {
     }
 
     let onInputChanged = (locationId, newValue) => {
-      numUnitsFromSettlements.set(locationId, newValue)
+      numUnitsFromSettlements.set(locationId, newValue);
+      this.input.setReadyOptionVisible(
+        canBeReadyFn(numUnitsFromSettlements), onDoneFn
+      );
     }
     this.input.startMoveSelection(
-      turn.locationId, 
-      this.maxUnitsPerSettlement(locations, isMoveFromAllowedFn),
-      onInputChanged
+      turn.locationId, maxUnitsPerSettlement, onInputChanged
     );
     
-    this.input.showReadyOption(onDoneFn);
+    this.input.setReadyOptionVisible(
+      canBeReadyFn(numUnitsFromSettlements), onDoneFn
+    );
   }
 
   maxUnitsPerSettlement(locations, isMoveFromAllowedFn) {
@@ -2338,7 +2478,7 @@ class AncientLoreEventGenerator {
     this.input.showVotes(playersWithKeeper);
   }
 
-  beginContest(extraCards, playersAllies) {
+  beginConflict(extraCards, playersAllies) {
     if (this.myPlayerId < 0) { return; }
 
     this.offerToMakeAlliances(playersAllies);
@@ -2371,7 +2511,7 @@ class AncientLoreEventGenerator {
 
     // The continue option will appear once everyone has sent a 
     // ConflictCardSelectionEvent with isTimeOver == true.
-    this.input.startCountdown(10000, () => { // TODO 30000
+    this.input.startCountdown(1000, () => { // TODO 30000
       isTimeOver = true;
       this.sendConflictCardSelection(cards, isReady, isTimeOver);
     });
@@ -2583,6 +2723,14 @@ class AncientLoreInputCollector {
     this.onReadyFn = onClickFn;
     this.readyButton.value = buttonText;
     this.readyButton.style.display = "block";
+  }
+
+  setReadyOptionVisible(visible, onClickFn, buttonText = "Ready") {
+    if (visible) {
+      this.showReadyOption(onClickFn, buttonText);
+    } else {
+      this.hideReadyOption();
+    }
   }
 
   showReadyOption(onClickFn, buttonText = "Ready") {
