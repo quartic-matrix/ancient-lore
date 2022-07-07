@@ -26,7 +26,9 @@ function makeTwoDigits(number) {
 
 function findAndErase(array, elementValue) {
   let index = array.indexOf(elementValue);
+  if (index < 0) return false;
   array.splice(index, 1);
+  return true;
 }
 
 class StartAncientLoreEvent extends LogEvent {
@@ -1267,7 +1269,7 @@ class ExecutingActionsActivity extends Activity {
     }
     let winners = [];
     for (const player of m.players) {
-      if (player.victoryPoints >= 10 && player.victoryPoints >= maxVps) {
+      if (player.victoryPoints >= 50 && player.victoryPoints >= maxVps) {
         winners.push(player.name);
       }
     }
@@ -1778,7 +1780,8 @@ class ConvertActivity extends TurnActivity {
         }
       }
     }
-    conversions.sort((a, b) => { return a.rank - b.rank; });
+    // Reverse sort conversions so we can pop them.
+    conversions.sort((a, b) => { return b.rank - a.rank; });
     return conversions;
   }
 
@@ -1789,25 +1792,34 @@ class ConvertActivity extends TurnActivity {
   onConvertFollower(fromPlayerId, toPlayerId, locationId, m) {
     // Check if there was anyone to convert.
     if (fromPlayerId != undefined) {
-      // Adjust the numUnits per player.
-      let location = m.locations[locationId];
-      if (location.players[fromPlayerId].numUnits) {
-        location.players[fromPlayerId].numUnits--;
-        location.players[toPlayerId].numUnits++;
+      // If fromPlayer has played a convert card, then cancel that rather than
+      // converting a unit.
+      let index = this.conversions.findIndex(c => c.playerId == fromPlayerId);
+      if (index >= 0) {
+        // Don't do the conversion, but still remove the card from their hand.
+        this.conversions.splice(index, 1);
+        findAndErase(m.players[fromPlayerId].extraCards, "convert");
+      } else {
+        // Adjust the numUnits of these players.
+        let location = m.locations[locationId];
+        if (location.players[fromPlayerId].numUnits) {
+          location.players[fromPlayerId].numUnits--;
+          location.players[toPlayerId].numUnits++;
+        }
       }
       // Remove the convert card from the player's hand.
       findAndErase(m.players[toPlayerId].extraCards, "convert");
     }
 
     // Mark the conversion as done.
-    ++this.currentConversionI;
-    if (this.currentConversionI >= this.conversions.length) {
+    this.conversions.pop();
+    if (this.conversions.length == 0) {
       this.resolveConflictFn(m);
     }
   }
 
   currentPlayerId() {
-    return this.conversions[this.currentConversionI].playerId;
+    return this.conversions[this.conversions.length-1].playerId;
   }
 }
 
