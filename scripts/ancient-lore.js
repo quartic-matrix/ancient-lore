@@ -1300,14 +1300,21 @@ class MovementTurnActivity extends TurnActivity {
     super(m, turn);
   }
   
-  resolveMovement(playerId, movements, m) {
-    // Update units in each location.
+  sanitizeMovements(playerId, movements, m) {
+    movements.totalMoved = 0;
     for (let movement of movements) {
       movement.numUnits = Math.max(movement.numUnits, 0);
       movement.numUnits = Math.min(
         movement.numUnits,
         m.locations[movement.fromId].players[playerId].numUnits
       );
+      movements.totalMoved += movement.numUnits;
+    }
+  }
+
+  resolveMovements(playerId, movements, m) {
+    // Update units in each location.
+    for (let movement of movements) {
       m.locations[movement.fromId].players[playerId].numUnits -= movement.numUnits;
       m.locations[movement.toId].players[playerId].numUnits += movement.numUnits;
     }
@@ -1334,7 +1341,8 @@ class MoveTurnActivity extends MovementTurnActivity {
   }
 
   onMoveUnits(playerId, movements, m) {
-    this.resolveMovement(playerId, movements, m);
+    this.sanitizeMovements(playerId, movements, m);
+    this.resolveMovements(playerId, movements, m);
     this.updateKeepers(m);
     this.endTurn();
   }
@@ -1409,11 +1417,11 @@ class ProclaimTurnActivityCoordinator extends TurnActivityCoordinator {
 
 
 class ProclaimTurnVoteActivity extends TurnActivity {
-  constructor(m, revealActivity, loreI) {
-    super(m, revealActivity.turn);
+  constructor(m, proclaimActivity, loreI) {
+    super(m, proclaimActivity.turn);
 
     this.loreI = loreI;
-    this.playersWithKeeper = revealActivity.playersWithKeeper;
+    this.playersWithKeeper = proclaimActivity.playersWithKeeper;
 
     for (const playerWithKeeper of this.playersWithKeeper) {
       m.players[playerWithKeeper.playerId].isActive = true;
@@ -1512,7 +1520,8 @@ class RegroupTurnActivity extends MovementTurnActivity {
   }
 
   onMoveUnits(playerId, movements, m) {
-    this.resolveMovement(playerId, movements, m);
+    this.sanitizeMovements(playerId, movements, m);
+    this.resolveMovements(playerId, movements, m);
     this.updateKeepers(m);
     
     // Reorder the turn order.
@@ -1547,6 +1556,8 @@ class ConflictTurnActivity extends TurnActivity {
     super(m, turn);
     this.isInExtraTime = false;
     this.playersAllies = [];
+
+    turn.location = m.locations[turn.locationId];
     
     for (let playerId = 0; playerId < m.players.length; ++playerId) {
       if (this.isPlayerInvolved(m, playerId)) {
@@ -1562,6 +1573,14 @@ class ConflictTurnActivity extends TurnActivity {
         this.playersAllies.push(undefined);
       }
     }
+
+    this.keyPlayers = [];
+    this.keyPlayers.push(turn.playerId);
+    for (let playerId = 0; playerId < m.players.length; ++playerId) {
+      if (turn.location.players[playerId].numUnits > 0) {
+        this.keyPlayers.push(playerId);
+      }
+    }    
   }
 
   makeCoordinator() {
@@ -1629,6 +1648,32 @@ class ConflictTurnActivity extends TurnActivity {
     }
   }
 
+  beginResolving(m) {
+    this.alliances = [];
+    for (const player of this.playersAllies) {
+      if (!player) continue;
+      if (!player.inAlliance || player.allies.length > 0) {
+        let isValid = this.keyPlayers.includes(player.id);
+        for (let i = 0; !isValid && i < player.allies.length; ++i) {
+          isValid = this.keyPlayers.includes(player.allies[i]);
+        }
+        let alliance = { playerIds: [...player.allies] };
+        alliance.playerIds.push(player.id);
+        if (isValid) {
+          this.alliances.push(alliance);
+        } else {
+          // Any players who are not part of a valid alliance are treated 
+          // as having not selected any cards.
+          for (let playerId of alliance.playerIds) {
+            m.players[playerId].cardSelection = [];
+          }
+        }
+      }
+    }
+
+    this.doBeginResolving(m);
+  }
+
   convertFollowers(m, nextResolveStepFn) {
     m.activity = new ConvertActivity(
       m, this.turn, this.playersAllies, nextResolveStepFn
@@ -1649,40 +1694,16 @@ class ConflictTurnActivity extends TurnActivity {
      * Set keepers.
      */
     const turn = this.turn;
-    let location = m.locations[turn.locationId];
-
-    let keyPlayers = [];
-    keyPlayers.push(turn.playerId);
-    for (let player of this.playersAllies) {
-      if (player && location.players[player.id].numUnits > 0) {
-        keyPlayers.push(player.id);
-      }
-    }
-
-    let alliances = [];
-    for (const player of this.playersAllies) {
-      if (!player) continue;
-      if (!player.inAlliance || player.allies.length > 0) {
-        let isValid = keyPlayers.includes(player.id);
-        for (let i = 0; !isValid && i < player.allies.length; ++i) {
-          isValid = keyPlayers.includes(player.allies[i].id);
-        }
-        if (isValid) {
-          let alliance = { 'allies' : player.allies };
-          alliance.allies.push(player.id);
-          alliances.push(alliance);
-        }
-      }
-    }
+    let location = turn.location;
 
     // Add on fractions for tie breaker.
     // Initiator gets (<num players> + 1)/(<num players> + 2)
     // Others get (<num players> - <earliest position in turn order>)/(<num players> + 2)
-    for (let alliance of alliances) {
+    for (let alliance of this.alliances) {
       alliance.strength = 0;
       let bestTieBreaker = 0;
       let numPlayers = m.players.length;
-      for (const playerId of alliance.allies) {
+      for (const playerId of alliance.playerIds) {
         alliance.strength += location.players[playerId].numUnits;
         let player = m.players[playerId];
         let numPlus2 = player.cardSelection.filter(c => c == "plus2").length;
@@ -1700,19 +1721,19 @@ class ConflictTurnActivity extends TurnActivity {
       alliance.strength += bestTieBreaker/(numPlayers + 2);
     }
     // Strongest is placed first.
-    alliances.sort((a, b) => { return b.strength - a.strength; });
+    this.alliances.sort((a, b) => { return b.strength - a.strength; });
 
     // Set the keepers.
     for (let player of location.players) {
       player.hasKeeper = false;
     }
-    for (let playerId of alliances[0].allies) {
+    for (let playerId of this.alliances[0].playerIds) {
       location.players[playerId].hasKeeper = true;
     }
 
     // Send everyone else to backwood.
-    for (let aI = 1; aI < alliances.length; ++aI) {
-      for (let playerId of alliances[aI].allies) {
+    for (let aI = 1; aI < this.alliances.length; ++aI) {
+      for (let playerId of this.alliances[aI].playerIds) {
         m.locations[0].players[playerId].numUnits +=
           location.players[playerId].numUnits;
         location.players[playerId].numUnits = 0;
@@ -1772,17 +1793,36 @@ class ConvertActivity extends TurnActivity {
 
   identifyConversions(m) {
     let conversions = [];
-    for (let playerId = 0; playerId < m.players.length; ++playerId) {
-      let player = m.players[playerId];
+    for (let [playerId, player] of m.players.entries()) {
       for (let card of player.cardSelection) {
         if (card == "convert") {
           conversions.push({playerId: playerId, rank: player.rank});
         }
       }
     }
+    this.removeInvalidConversions(m, conversions);
     // Reverse sort conversions so we can pop them.
     conversions.sort((a, b) => { return b.rank - a.rank; });
     return conversions;
+  }
+
+  removeInvalidConversions(m, conversions) {
+    if (!this.turn.players) return;
+    for (let [playerId, turnPlayer] of this.turn.players.entries()) {
+      if (
+        m.locations[this.turn.locationId].players[playerId].numUnits == 0 &&
+        turnPlayer.totalMoved == 0
+      ) {
+        // No units involved, remove any related conversions.
+        for (let cI = 0; cI < conversions.length;) {
+          if (conversions[cI].playerId == playerId) {
+            conversions.splice(cI, 1);
+          } else {
+            ++cI;
+          }
+        }
+      }
+    }
   }
 
   makeCoordinator() {
@@ -1874,7 +1914,7 @@ class ContestTurnActivity extends ConflictTurnActivity {
     return location.players[playerId].numUnits > 0;
   }
   
-  beginResolving(m) {
+  doBeginResolving(m) {
     this.convertFollowers(m, this.resolveConflict.bind(this));
   }
 }
@@ -1885,6 +1925,11 @@ class InvadeTurnActivity extends ConflictTurnActivity {
 
     if (!this.isPlayerInvolved(m, turn.playerId)) {
       return { isValid: false }; // This is not a valid turn, skip it.
+    }
+
+    turn.players = [];
+    for (let player of m.players) {
+      turn.players.push({totalMoved : 0});
     }
   }
 
@@ -1899,13 +1944,14 @@ class InvadeTurnActivity extends ConflictTurnActivity {
     }
     return false;
   }
-  
-  beginResolving(m) {
+
+  doBeginResolving(m) {
     let finalResolveStepFn = this.resolveConflict.bind(this);
     let nextResolveStepFn = () => {
       this.convertFollowers(m, finalResolveStepFn);
     }
     m.activity = new InvadeMoveTurnActivity(m, this.turn, nextResolveStepFn);
+    m.activity.begin();
   }
 }
 
@@ -1915,18 +1961,27 @@ class InvadeMoveTurnActivity extends MovementTurnActivity {
     this.nextResolveStepFn = nextResolveStepFn;
     this.numUnitsToMovePerPlayer = this.identifyNumUnitsToMovePerPlayer(m);
   }
-  
+
   identifyNumUnitsToMovePerPlayer(m) {
     let numUnitsToMovePerPlayer = [];
 
-    for (const player of m.players) {
-      let numUnitsToMove = 0;
+    for (const [playerId, player] of m.players.entries()) {
+      let numWantToMove = 0;
       for (const card of player.cardSelection) {
-        numUnitsToMove += this.cardToNumUnits(card);
+        numWantToMove += this.cardToNumUnits(card);
       }
-      numUnitsToMovePerPlayer.push(numUnitsToMove);
-    }
 
+      let maxCanMove = 0;
+      for (let location of m.locations) {
+        if (location.isConnectedTo[this.turn.locationId]) {
+          maxCanMove += location.players[playerId].numUnits;
+        }
+      }
+
+      let numToMove = Math.min(numWantToMove, maxCanMove);
+      numUnitsToMovePerPlayer.push(numToMove);
+    }
+    
     return numUnitsToMovePerPlayer;
   }
 
@@ -1948,14 +2003,34 @@ class InvadeMoveTurnActivity extends MovementTurnActivity {
     return new InvadeMoveTurnActivityCoordinator(this);
   }
 
+  begin() {
+    let totalUnitsMoving = 0;
+    for (let numUnitsToMoveForPlayer of this.numUnitsToMovePerPlayer) {
+      totalUnitsMoving += numUnitsToMoveForPlayer;
+    }
+    if (totalUnitsMoving == 0) {
+      this.nextResolveStepFn();
+    }
+  }
+
   onMoveUnits(playerId, movements, m) {
-    this.resolveMovement(playerId, movements, m);
+
+    this.sanitizeMovements(playerId, movements, m);
+
+    this.turn.players[playerId].totalMoved = movements.totalMoved;
+    
+    if (this.numUnitsToMovePerPlayer[playerId] != movements.totalMoved) {
+      return;
+    }
+
+    this.resolveMovements(playerId, movements, m);
 
     // Each player who needs to only moves once, but they will not move all
     // the units they committed to iff they cannot move that many units.
-    this.numUnitsToMovePerPlayer[playerId] = 0;
+    this.numUnitsToMovePerPlayer[playerId] -= movements.totalMoved;
     
-    // Check whether everyone has moved yet, if so resolve the conflict.
+    // Check whether everyone has moved yet, if so continue resolving the 
+    // conflict.
     let isEveryoneReady = true;
     for (let numUnitsToMove of this.numUnitsToMovePerPlayer) {
       if (numUnitsToMove > 0) {
@@ -1981,7 +2056,16 @@ class InvadeMoveTurnActivityCoordinator extends TurnActivityCoordinator {
   doBegin(v, m) {
     let myNumUnitsToMove = this.numUnitsToMovePerPlayer[m.myPlayerId];
     if (myNumUnitsToMove > 0) {
+      this.isMovingUnits = true;
       v.generator.beginInvadeMove(this.turn, m.locations, myNumUnitsToMove);
+    }
+  }
+
+  update(v, m) {
+    let myNumUnitsToMove = this.numUnitsToMovePerPlayer[m.myPlayerId];
+    if (this.isMovingUnits && myNumUnitsToMove == 0) {
+      v.generator.clearSelectionOptions();
+      this.isMovingUnits = false;
     }
   }
 }
@@ -2322,15 +2406,6 @@ class AncientLoreEventGenerator {
     let isMoveFromAllowedFn = (location) => {
       return location.isConnectedTo[turn.locationId];
     }
-    
-    let maxUnitsPerSettlement = 
-      this.maxUnitsPerSettlement(locations, isMoveFromAllowedFn);
-    let maxCanMove = 0;
-    for (const value of maxUnitsPerSettlement) {
-      maxCanMove += value;
-    }
-    numUnitsToMove = Math.min(numUnitsToMove, maxCanMove);
-
     let canBeReadyFn = (numUnitsFromSettlements) => {
       let numMoved = 0;
       for (const value of numUnitsFromSettlements.values()) {
@@ -3670,9 +3745,9 @@ class AllianceSelection {
 
       let cardsCell = document.createElement("td");
       cardsCell.appendChild(this.cardsSpan(numCardsPerPlayer, player.id));
-      for (let ally of player.allies) {
+      for (let allyId of player.allies) {
         cardsCell.appendChild(document.createElement("br"));
-        cardsCell.appendChild(this.cardsSpan(numCardsPerPlayer, players[ally].id));
+        cardsCell.appendChild(this.cardsSpan(numCardsPerPlayer, allyId));
       }
 
       tableRow.appendChild(nameCell);
