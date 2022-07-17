@@ -1,8 +1,4 @@
 
-.move, .highlight, .keeper {
-  visibility: hidden;
-}
-
 .game-area {
   position: relative;
   height: auto;
@@ -10,42 +6,58 @@
   flex-direction: row;
 }
 
-.middle {
-  position: relative;
-  height: auto;
-  display: flex;
-  flex-direction: row;
+.players {
+  width: 20vw;
 }
 
-.input-overlay table {
-  background-color: rgba(255, 255, 255, 0.6);
-}
-
-.board-area {
+.play-area {
   position: relative; 
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.board {
-  height: auto;
-}
-
-.right-side {
-  position: relative;
-  width: auto;
+  max-height: 99vh;
+  width: 80vw;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+}
+
+.middle {
+  position: relative;
+  max-height: 84%;
+  width: 100%;
+  flex: 1 1 20em;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.board-area {
+  width: 100%;
+  height: 100%;
+}
+
+.board {
+  width: 100%;
+  height: 100%;
+}
+
+.right-side {
+  height: 100%;
+  max-width: 5em;
+  flex: 0 1 5em;
 }
 
 .footer {
   position: relative;
-  height: auto;
+  width: 100%;
+  height: 15%;
+  max-height: 8.1em;
+  flex: 0 1 8.1em;
   display: flex;
   flex-direction: row;
   align-items: flex-end;
+}
+
+.bottom-cards-area {
+  height: 100%;
 }
 
 .cards-area {
@@ -53,7 +65,7 @@
   flex-grow: 1;
   display: flex;
   flex-direction: row;
-  justify-content: center;
+  justify-content: center;    
   align-items: flex-end;
 }
 
@@ -62,8 +74,8 @@
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: normal;
+  justify-content: center; 
+  align-items: flex-end;
 }
 
 .cards-area-heading {
@@ -72,18 +84,36 @@
 }
 
 .card.selection {
-  padding-top: 1%;
-  padding-bottom: 0%;
-  padding-left: 0.5%;
-  padding-right: 0.5%;
   position: relative;
-  flex-basis: 4em;
+  flex: 1 1;
+  max-width: 5em;
+  max-height: 8em;
+  min-width: 2.5em;
+  min-height: 4em;
+}
+
+.bottom-cards-area .card.selection {
+  height: 95%;
+}
+
+.card svg {
+  width: 100%;
+  height: 100%;
+  max-height: inherit;
 }
 
 .flow-control-area {
   position: relative;
   display: flex;
   flex-direction: column;
+}
+
+.move, .highlight, .keeper {
+  visibility: hidden;
+}
+
+.input-overlay table {
+  background-color: rgba(255, 255, 255, 0.6);
 }
 
 .button {

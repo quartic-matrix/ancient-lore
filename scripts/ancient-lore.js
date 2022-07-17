@@ -506,7 +506,7 @@ class AncientLoreGame extends BasicGame {
     
     // Display
     this.board = new AncientLoreBoardUpdater(
-      domElement.querySelector(".board")
+      domElement.querySelector(".board-area")
     );
     this.playerList = new PlayerList(domElement, playerName, this.board);
     this.conclusionDisplay = new ConclusionDisplay(domElement);
@@ -2018,7 +2018,7 @@ class InvadeMoveTurnActivity extends MovementTurnActivity {
     this.sanitizeMovements(playerId, movements, m);
 
     this.turn.players[playerId].totalMoved = movements.totalMoved;
-    
+
     if (this.numUnitsToMovePerPlayer[playerId] != movements.totalMoved) {
       return;
     }
@@ -2738,7 +2738,7 @@ class AncientLoreGameSetup {
 class AncientLoreInputCollector {
   constructor(rootElement) {
     this.overlay = rootElement.querySelector(".input-overlay");
-    this.board = rootElement.querySelector(".board");
+    this.board = rootElement.querySelector(".board-area");
     this.cardsArea = rootElement.querySelector(".cards-area");
     this.cardsAreaColumn = rootElement.querySelector(".cards-area-column");
 
@@ -2968,15 +2968,13 @@ class CardSelection {
   deselect(card) {
     card.isSelected = false;
     card.querySelector(".border").style.stroke = "#6d0000"; 
-    card.style.paddingTop = "1%";
-    card.style.paddingBottom = "0%";
+    card.style.alignSelf = "flex-end";
   }
 
   select(card) {
     card.isSelected = true;
     card.querySelector(".border").style.stroke = "#ff0000";
-    card.style.paddingTop = "0%";
-    card.style.paddingBottom = "1%";
+    card.style.alignSelf = "flex-start";
   }
 
   initCardElement(cardType, html) {
