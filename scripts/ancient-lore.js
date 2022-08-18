@@ -567,8 +567,9 @@ class PlayerList  {
     this.playerListElement.innerHTML = "";
 
     for (let rank = 0; rank < players.length; ++rank) {
-      let player = players.find((p) => { return p.rank == rank; });
-      this.display(player.name, player, displayOthersActions);
+      let playerId = players.findIndex((p) => { return p.rank == rank; });
+      let player = players[playerId];
+      this.display(player.name, player, playerId, displayOthersActions);
     }
 
     // Display observers, i.e. peers that are not players.
@@ -580,8 +581,9 @@ class PlayerList  {
     }
   }
 
-  display(playerName, player, displayOthersActions) {
+  display(playerName, player, playerId, displayOthersActions) {
     let para = document.createElement("p");
+
     if (this.myPlayerName == playerName) {
       para.style.fontWeight = "bold";
     }
@@ -590,6 +592,10 @@ class PlayerList  {
     para.appendChild(nameNode);
 
     if (player) {
+      para.style.color = this.board.colours[playerId];
+      para.style.borderRight = "0.5em solid";
+      para.style.borderRightColor = para.style.color;
+
       let vpNode = document.createTextNode(" : " + player.victoryPoints.toString());
       para.appendChild(vpNode);
 
@@ -599,8 +605,6 @@ class PlayerList  {
         para.classList.remove("active-player");
       }
 
-      // TODO `player` no longer has `selectedAction`, need to get that from
-      // the 
       if (
         (this.myPlayerName == playerName || displayOthersActions) &&
         player.selectedAction && 
@@ -654,34 +658,22 @@ class AncientLoreBoardUpdater {
       this.board.innerHTML = board5Html.trim();
     }
 
+    // Proclaimed Lore
     this.proclaimedLoreArea = this.makeProclaimedLoreArea();
 
+    // Locations
     let locationElements = this.board.querySelectorAll(".settlement");
     let numLocations = locationElements.length;
 
     this.locations = [];
     for (let locationId = 0; locationId < numLocations; locationId++) {
-      let location = {};
-
-      const nameEle = 
-        this.board.querySelector(".settlement" + locationId + " .name").children[0];
-      location.name = nameEle.innerHTML;
-      
-      let displayAreas = this.makeDisplayAreas(locationId);
-      
-      location.unitDisplayArea = displayAreas.unitDisplayArea;
-      location.unitDisplays = [];
-      for (let playerId = 0; playerId < options.players.length; ++playerId) {
-        let unitDisplay = this.makeUnitDisplay(location, playerId);
-        location.unitDisplayArea.appendChild(unitDisplay);
-        location.unitDisplays.push(unitDisplay);
-      }
-
-      location.loreDisplayArea = displayAreas.loreDisplayArea;
-
-      this.locations.push(location);
+      this.setupLocation(locationId, options.players.length);
     }
 
+    // Paths
+    this.setupPaths(numLocations, options.players.length);
+
+    // Highlighters
     this.locationHighlighter = new SettlementHighlighter(this.board);
     this.loreHighlighter = new LoreHighlighter(this.board);
   }
@@ -698,6 +690,182 @@ class AncientLoreBoardUpdater {
     return connections;
   }
 
+  setupLocation(locationId, numPlayers) {
+    let location = {};
+
+    const nameEle = 
+      this.board.querySelector(".settlement" + locationId + " .name").children[0];
+    location.name = nameEle.innerHTML;
+    
+    let displayAreas = this.makeDisplayAreasForLocation(locationId);
+    
+    location.unitDisplayArea = displayAreas.unitDisplayArea;
+    location.unitDisplays = [];
+    this.fillUnitDisplayArea(
+      location.unitDisplayArea, location.unitDisplays, numPlayers
+    );
+
+    location.loreDisplayArea = displayAreas.loreDisplayArea;
+
+    this.locations.push(location);
+  }
+
+  setupPaths(numLocations, numPlayers) {
+
+    this.paths = [];
+    for (let pathFromI = 0; pathFromI < numLocations; pathFromI++) {
+      let pathTo = [];
+      for (let pathToI = 0; pathToI < numLocations; pathToI++) {
+        pathTo.push(undefined);
+      }
+      this.paths.push(pathTo);
+    }
+
+    let pathElements = this.board.querySelectorAll(".path");
+    for (let pathElement of pathElements) {
+      this.setupPath(pathElement, numPlayers);
+    }
+  }
+
+  setupPath(pathElement, numPlayers) {
+    let locationId0 = parseInt(pathElement.getAttribute("locationid0"));
+    let locationId1 = parseInt(pathElement.getAttribute("locationid1"));
+    let path = this.paths[locationId0][locationId1] = {
+      unitDisplayArea: this.makeUnitDisplayAreaIn(pathElement),
+      unitDisplays: []
+    };
+    this.fillUnitDisplayArea(
+      path.unitDisplayArea, path.unitDisplays, numPlayers
+    );
+
+    this.paths[locationId1][locationId0] = path;
+  }
+
+  fillUnitDisplayArea(unitDisplayArea, unitDisplays, numPlayers) {
+    for (let playerId = 0; playerId < numPlayers; ++playerId) {
+      let unitDisplay = this.makeUnitDisplay(playerId);
+      unitDisplayArea.appendChild(unitDisplay);
+      unitDisplays.push(unitDisplay);
+    }
+  }
+
+  makeUnitDisplay(playerId) {
+    let unitDisplay = document.createElement("div");
+    let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    // <svg viewBox="-508 54 66 138" width="66" height="138"><g id="g971" class="unit"></g>
+    svg.setAttribute("viewBox", "-508 54 66 138");
+
+    const exampleUnit = this.board.querySelector(".examples .unit");
+    let unit = exampleUnit.cloneNode(true);
+    let back = unit.querySelector(".unit-fill");
+    back.style.fill = this.colours[playerId];
+
+    svg.appendChild(unit);
+    unitDisplay.appendChild(svg);
+    return unitDisplay;
+  }
+
+  makeLoreDisplay(location) {
+    let loreDisplay = document.createElement("div");
+    loreDisplay.classList.add("loreDisplay");
+    let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    // <svg viewBox="-508 204 66 66" width="66" height="66"><g id="g1163" class="lore"></g>
+    svg.setAttribute("viewBox", "-508 204 66 66");
+    svg.setAttribute("width", "66");
+    svg.setAttribute("height", "66");
+
+    const exampleLore = this.board.querySelector(".examples .lore");
+    let lore = exampleLore.cloneNode(true);
+
+    svg.appendChild(lore);
+    loreDisplay.appendChild(svg);
+    return loreDisplay;
+  }
+
+  makeDisplayAreasForLocation(locationId) {
+    let parent = this.board.querySelector(".settlement" + locationId + ".settlement");
+    const name = parent.querySelector(".name");
+
+    let parentBox = parent.getBBox();
+    let nameBox = name.getBBox();
+
+    const x = parentBox.x;
+    const y = (nameBox.y + 1.2*nameBox.height);
+    const width = parentBox.width;
+    const height = nameBox.height;
+
+    // const x = name.x.baseVal[0].value;
+    // const y = (name.y.baseVal[0].value + 20);
+
+    let group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    // let m = new DOMMatrix([0.4,0,0,0.4,x,y]);
+    let m = document.createElementNS("http://www.w3.org/2000/svg", "svg").createSVGMatrix();
+    m.a = 1; m.b = 0; 
+    m.c = 0; m.d = 1;
+    m.e = x; m.f = y;
+    group.transform.baseVal.initialize(
+      group.transform.baseVal.createSVGTransformFromMatrix(m)
+    );
+
+    let foreignObject = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
+    foreignObject.style.width = width;
+    foreignObject.style.height = 66+138;
+
+    let displayAreas = {};
+    displayAreas.unitDisplayArea = 
+      this.makeDisplayArea("unit-display-area", width, 138);
+    displayAreas.loreDisplayArea = 
+      this.makeDisplayArea("lore-display-area", width, 66);
+
+    foreignObject.appendChild(displayAreas.loreDisplayArea);
+    foreignObject.appendChild(displayAreas.unitDisplayArea);
+
+    group.appendChild(foreignObject);
+    parent.appendChild(group);
+    return displayAreas;
+  }
+
+  makeProclaimedLoreArea() {
+    let parent = this.board.querySelector(".proclaimed-lore");
+    return this.makeDisplayAreaForElement(
+      parent, parent.firstElementChild, "lore-display-area"
+    );
+  }
+
+  makeUnitDisplayAreaIn(element) {
+    let group = element.querySelector(".unit-area");
+    return this.makeDisplayAreaForElement(
+      group, group.firstElementChild, "unit-display-area"
+    );
+  }
+
+  makeDisplayAreaForElement(parent, area, className) {
+    const box = area.getBBox();
+
+    let foreignObject = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
+    foreignObject.style.width = box.width;
+    foreignObject.style.height = box.height;
+    foreignObject.style.x = box.x;
+    foreignObject.style.y = box.y;
+
+    let displayArea = this.makeDisplayArea(className, box.width, box.height);
+
+    foreignObject.appendChild(displayArea);
+    parent.appendChild(foreignObject);
+    return displayArea;
+  }
+
+  makeDisplayArea(name, width, height) {
+    let div = document.createElement("div");
+    div.classList.add(name);
+    div.style.width = width;
+    div.style.height = height;
+
+    return div;
+  }
+
+
+
   updateLocations(myPlayerId, modelLocations) {
     if (!this.locations) return;
 
@@ -707,15 +875,29 @@ class AncientLoreBoardUpdater {
       for (let playerId = 0; playerId < modelLocation.players.length; ++playerId) {
         let unitDisplay = boardLocation.unitDisplays[playerId];
         let player = modelLocation.players[playerId];
-        this.updateUnitsForPlayerInLocation(
+        this.updateUnitDisplay(
           unitDisplay, player.numUnits, player.hasKeeper
         );
       }
       this.updateLoreInLocation(myPlayerId, modelLocation, this.locations[locationId]);
     }
+
+    // TODO Remove this testing code:
+    let fromI = 0;
+    for (let pathFrom of this.paths) {
+      let toI = -1;
+      for (let path of pathFrom) {
+        ++toI;
+        if (path == undefined) continue;
+        for (let unitDisplay of path.unitDisplays) {
+          this.updateUnitDisplay(unitDisplay, fromI*10 + toI);
+        }
+      }
+      ++fromI;
+    }
   }
 
-  updateUnitsForPlayerInLocation(unitDisplay, numUnits, hasKeeper) {
+  updateUnitDisplay(unitDisplay, numUnits, hasKeeper) {
     if (unitDisplay) {
       if (numUnits == 0) {
         unitDisplay.style.display = "none";
@@ -787,108 +969,6 @@ class AncientLoreBoardUpdater {
       let loreDisplay = loreDisplays[i];
       loreDisplay.style.display = "none";
     }
-  }
-
-  makeUnitDisplay(location, playerId) {
-    let unitDisplay = document.createElement("div");
-    let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    // <svg viewBox="-508 54 66 138" width="66" height="138"><g id="g971" class="unit"></g>
-    svg.setAttribute("viewBox", "-508 54 66 138");
-
-    const exampleUnit = this.board.querySelector(".examples .unit");
-    let unit = exampleUnit.cloneNode(true);
-    let back = unit.querySelector(".unit-fill");
-    back.style.fill = this.colours[playerId];
-
-    svg.appendChild(unit);
-    unitDisplay.appendChild(svg);
-    return unitDisplay;
-  }
-
-  makeLoreDisplay(location) {
-    let loreDisplay = document.createElement("div");
-    loreDisplay.classList.add("loreDisplay");
-    let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    // <svg viewBox="-508 204 66 66" width="66" height="66"><g id="g1163" class="lore"></g>
-    svg.setAttribute("viewBox", "-508 204 66 66");
-    svg.setAttribute("width", "66");
-    svg.setAttribute("height", "66");
-
-    const exampleLore = this.board.querySelector(".examples .lore");
-    let lore = exampleLore.cloneNode(true);
-
-    svg.appendChild(lore);
-    loreDisplay.appendChild(svg);
-    return loreDisplay;
-  }
-
-  makeDisplayAreas(locationId) {
-    let parent = this.board.querySelector(".settlement" + locationId + ".settlement");
-    const name = parent.querySelector(".name");
-
-    let parentBox = parent.getBBox();
-    let nameBox = name.getBBox();
-
-    const x = parentBox.x;
-    const y = (nameBox.y + 1.2*nameBox.height);
-    const width = parentBox.width;
-    const height = nameBox.height;
-
-    // const x = name.x.baseVal[0].value;
-    // const y = (name.y.baseVal[0].value + 20);
-
-    let group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    // let m = new DOMMatrix([0.4,0,0,0.4,x,y]);
-    let m = document.createElementNS("http://www.w3.org/2000/svg", "svg").createSVGMatrix();
-    m.a = 1; m.b = 0; 
-    m.c = 0; m.d = 1;
-    m.e = x; m.f = y;
-    group.transform.baseVal.initialize(
-      group.transform.baseVal.createSVGTransformFromMatrix(m)
-    );
-
-    let foreignObject = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
-    foreignObject.style.width = width;
-    foreignObject.style.height = 66+138;
-
-    let displayAreas = {};
-    displayAreas.unitDisplayArea = 
-      this.makeDisplayArea("unit-display-area", width, 138);
-    displayAreas.loreDisplayArea = 
-      this.makeDisplayArea("lore-display-area", width, 66);
-
-    foreignObject.appendChild(displayAreas.loreDisplayArea);
-    foreignObject.appendChild(displayAreas.unitDisplayArea);
-
-    group.appendChild(foreignObject);
-    parent.appendChild(group);
-    return displayAreas;
-  }
-
-  makeProclaimedLoreArea() {
-    let parent = this.board.querySelector(".proclaimed-lore");
-    const box = parent.firstElementChild.getBBox();
-
-    let foreignObject = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
-    foreignObject.style.width = box.width;
-    foreignObject.style.height = box.height;
-
-    let loreDisplayArea = 
-      this.makeDisplayArea("lore-display-area", box.width, box.height);
-
-    foreignObject.appendChild(loreDisplayArea);
-
-    parent.appendChild(foreignObject);
-    return loreDisplayArea;
-  }
-
-  makeDisplayArea(name, width, height) {
-    let div = document.createElement("div");
-    div.classList.add(name);
-    div.style.width = width;
-    div.style.height = height;
-
-    return div;
   }
 
   nameOfLocation(locationId) {
