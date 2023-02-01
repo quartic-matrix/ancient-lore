@@ -65,13 +65,21 @@ class StartAncientLoreEvent extends LogEvent {
     let numLocations = tempHtmlBoard.locations.length;
     let numSettlements = numLocations - 1;
 
+    // Choose the starting locations
+    let startingLocations = [];
+    {
+      let potentialCombos = tempHtmlBoard.startingLocations;
+      let comboI = Math.floor(Math.random() * potentialCombos.length);
+      startingLocations = potentialCombos[comboI];
+    }
+
     // Distribute the units.
     const numStartingUnitsPerPlayer = 4;
     let units = [];
     for (let playerId = 0; playerId < options.players.length; ++playerId) {
       for (let unitI = 0; unitI < numStartingUnitsPerPlayer; ++unitI) {
-        let locationId = Math.floor(Math.random() * numSettlements) + 1;
-        units.push({locationId: locationId, playerId: playerId});
+        let i = Math.floor(Math.random() * startingLocations.length);
+        units.push({locationId: startingLocations[i], playerId: playerId});
       }
     }
     
@@ -647,6 +655,7 @@ class AncientLoreBoardUpdater {
     this.proclaimedLoreArea; // Set in loadBoard.
     this.locationHighlighter; // Set in loadBoard.
     this.locations; // Set in loadBoard.
+    this.startingLocations; // Set in loadBoard.
   }
 
   loadBoard(options) {
@@ -673,6 +682,9 @@ class AncientLoreBoardUpdater {
     // Paths
     this.setupPaths(numLocations, options.players.length);
 
+    // Starting locations
+    this.setupStartingLocations();
+
     // Highlighters
     this.locationHighlighter = new SettlementHighlighter(this.board);
     this.loreHighlighter = new LoreHighlighter(this.board);
@@ -688,6 +700,12 @@ class AncientLoreBoardUpdater {
       });
     }
     return connections;
+  }
+
+  setupStartingLocations() {
+    let svgElement = this.board.querySelector("svg");
+    let startingLocationsString = svgElement.getAttribute("starting-locations");
+    this.startingLocations = JSON.parse(startingLocationsString);
   }
 
   setupLocation(locationId, numPlayers) {
@@ -882,18 +900,17 @@ class AncientLoreBoardUpdater {
       this.updateLoreInLocation(myPlayerId, modelLocation, this.locations[locationId]);
     }
 
-    // TODO Remove this testing code:
-    let fromI = 0;
-    for (let pathFrom of this.paths) {
-      let toI = -1;
-      for (let path of pathFrom) {
-        ++toI;
-        if (path == undefined) continue;
-        for (let unitDisplay of path.unitDisplays) {
-          this.updateUnitDisplay(unitDisplay, fromI*10 + toI);
+    for (const [fromI, from] of modelLocations.entries()) {
+      for (const [toI, path] of from.paths.entries()) {
+        if (toI <= fromI || this.paths[fromI][toI] === undefined) continue;
+
+        let unitDisplays = this.paths[fromI][toI].unitDisplays;
+        for (const [playerId, pathPlayer] of path.players.entries()) {
+          this.updateUnitDisplay(
+            unitDisplays[playerId], pathPlayer.numUnits
+          );
         }
       }
-      ++fromI;
     }
   }
 
@@ -1115,8 +1132,10 @@ class FormingActivity extends Activity {
   setupConnections(connections, m) {
     for (let from of m.locations) {
       from.isConnectedTo = [];
+      from.paths = [];
       for (let to of m.locations) {
         from.isConnectedTo[to.id] = false;
+        from.paths[to.id] = undefined;
       }
     }
 
@@ -1125,6 +1144,12 @@ class FormingActivity extends Activity {
       let id1 = connection.locationId1;
       m.locations[id0].isConnectedTo[id1] = true;
       m.locations[id1].isConnectedTo[id0] = true;
+
+      m.locations[id0].paths[id1] = {players: []};
+      for (const [playerId, player] of m.players.entries()) {
+        m.locations[id0].paths[id1].players.push({ numUnits: 0 });
+      }
+      m.locations[id1].paths[id0] = m.locations[id0].paths[id1];
     }
   }
 }
@@ -1785,6 +1810,11 @@ class ConflictTurnActivity extends TurnActivity {
       let numPlayers = m.players.length;
       for (const playerId of alliance.playerIds) {
         alliance.strength += location.players[playerId].numUnits;
+        for (const path of location.paths) {
+          if (path === undefined) continue;
+          alliance.strength += path.players[playerId].numUnits;
+        }
+
         let player = m.players[playerId];
         let numPlus2 = player.cardSelection.filter(c => c == "plus2").length;
         for (let i = 0; i < numPlus2; ++i) {
@@ -1809,18 +1839,35 @@ class ConflictTurnActivity extends TurnActivity {
     }
     for (let playerId of this.alliances[0].playerIds) {
       location.players[playerId].hasKeeper = true;
+      
+      let totalUnits = gatherUnitsOnPathsTo(location, playerId);
+      location.players[playerId].numUnits += totalUnits;
     }
 
     // Send everyone else to backwood.
     for (let aI = 1; aI < this.alliances.length; ++aI) {
       for (let playerId of this.alliances[aI].playerIds) {
-        m.locations[0].players[playerId].numUnits +=
-          location.players[playerId].numUnits;
+        // TODO Allow retreats first.
+        let totalUnits = gatherUnitsOnPathsTo(location, playerId);
+
+        totalUnits += location.players[playerId].numUnits;
         location.players[playerId].numUnits = 0;
+
+        m.locations[0].players[playerId].numUnits += totalUnits;
       }
     }
 
     this.endTurn();
+  }
+
+  gatherUnitsOnPathsTo(location, playerId) {
+    let totalUnits = 0;
+    for (let path of location.paths) {
+      if (path === undefined) continue;
+      totalUnits += path.players[playerId].numUnits;
+      path.players[playerId].numUnits = 0;
+    }
+    return totalUnits;
   }
 }
 
@@ -1905,6 +1952,19 @@ class ConvertActivity extends TurnActivity {
     }
   }
 
+  findUnitFor(locationId, playerId, m) {
+    let location = m.locations[locationId];
+    if (location.players[playerId].numUnits > 0) {
+      return location;
+    }
+    for (let path of location.paths) {
+      if (path.players[playerId].numUnits > 0) {
+        return path;
+      }
+    }
+    return undefined;
+  }
+
   makeCoordinator() {
     return new ConvertActivityCoordinator(this);
   }
@@ -1921,9 +1981,9 @@ class ConvertActivity extends TurnActivity {
         findAndErase(m.players[fromPlayerId].extraCards, "convert");
       } else {
         // Adjust the numUnits of these players.
-        let location = m.locations[locationId];
-        if (location.players[fromPlayerId].numUnits) {
-          location.players[fromPlayerId].numUnits--;
+        let place = findUnitFor(locationId, fromPlayerId, m);
+        if (place) {
+          place.players[fromPlayerId].numUnits--;
           location.players[toPlayerId].numUnits++;
         }
       }
@@ -2102,8 +2162,13 @@ class InvadeMoveTurnActivity extends MovementTurnActivity {
     if (this.numUnitsToMovePerPlayer[playerId] != movements.totalMoved) {
       return;
     }
-
-    this.resolveMovements(playerId, movements, m);
+    
+    for (const movement of movements) {
+      const id0 = movement.fromId;
+      const id1 = movement.toId;
+      m.locations[id0].players[playerId].numUnits -= movement.numUnits;
+      m.locations[id0].paths[id1].players[playerId].numUnits += movement.numUnits;
+    }
 
     // Each player who needs to only moves once, but they will not move all
     // the units they committed to iff they cannot move that many units.
@@ -2210,6 +2275,7 @@ class AncientLoreModel extends LogEventConsumer {
     this.peers = [];
     this.players = []; // Added to in onStartGame.
     this.locations = []; // Setup in setupBoard.
+    this.paths = []; // Setup in setupBoard.
     this.proclaimedLore = []; // Added to by ProclaimTurnVoteActivity.
 
     this.progress = 1;
