@@ -75,11 +75,14 @@ class StartAncientLoreEvent extends LogEvent {
 
     // Distribute the units.
     const numStartingUnitsPerPlayer = 4;
+    let unitsDeck = new StartingUnitsCardDeck(
+      numStartingUnitsPerPlayer, options.players.length
+    );
     let units = [];
-    for (let playerId = 0; playerId < options.players.length; ++playerId) {
-      for (let unitI = 0; unitI < numStartingUnitsPerPlayer; ++unitI) {
-        let i = Math.floor(Math.random() * startingLocations.length);
-        units.push({locationId: startingLocations[i], playerId: playerId});
+    while (unitsDeck.numCardsInDeck() > 0) {
+      for (let locationId of startingLocations) {
+        if (unitsDeck.numCardsInDeck() == 0) break;
+        units.push({locationId: locationId, playerId: unitsDeck.drawRandom(1)[0]});
       }
     }
     
@@ -87,13 +90,9 @@ class StartAncientLoreEvent extends LogEvent {
     const numLorePerLocation = 2;
     let loreDistribution = [];
     let loreSupply = [0, 1, 2, 3, 4, 5, 6, 7, 8];
-    let loreExtraSupply = [];
-    loreExtraSupply.push(...loreSupply);
-    loreExtraSupply.push(...loreSupply);
-    loreExtraSupply.push(...loreSupply);
+    let loreExtraSupply = new StartingUnitsCardDeck(3, 9);
     for (let i = loreSupply.length; i < numLorePerLocation*numSettlements; ++i) {
-      const pickedI = Math.floor(Math.random() * loreExtraSupply.length);
-      loreSupply.push(loreExtraSupply.splice(pickedI, 1)[0]);
+      loreSupply.push(loreExtraSupply.drawRandom(1)[0]);
     }
     for (let j = 0; j < numLorePerLocation; ++j) {
       // Start from the second location, as the first is the woods which
@@ -2380,18 +2379,38 @@ class CardDeck {
     this.deck.push(card);
   }
 
-  peek(numToPeekAt) {
-    if (this.deck.length < numToPeekAt) {
-      this.deck.push(...this.discardPile);
-      this.discardPile = [];
-    }
-    let peekedCards = [];
-    for (let i = 0; i < numToPeekAt; i++) {
+  numCardsInDeck() {
+    return this.deck.length;
+  }
+
+  numCardsDiscarded() {
+    return this.discardPile.length;
+  }
+
+  drawTop(numToDraw) {
+    numToDraw = Math.min(numToDraw, this.deck.length);
+    return this.deck.splice(0, numToDraw);
+  }
+
+  drawRandom(numToDraw) {
+    numToDraw = Math.min(numToDraw, this.deck.length);
+    let cardsToDraw = [];
+    for (let i = 0; i < numToDraw; i++) {
       const pickedI = Math.floor(Math.random() * this.deck.length);
-      peekedCards.push(...this.deck.splice(pickedI, 1));
+      cardsToDraw.push(...this.deck.splice(pickedI, 1));
     }
+    return cardsToDraw;
+  }
+
+  peekRandom(numToPeekAt) {
+    numToPeekAt = Math.min(numToPeekAt, this.deck.length);
+    let peekedCards = this.drawRandom(numToPeekAt);
     this.deck.push(...peekedCards);
     return peekedCards;
+  }
+
+  addToDiscards(cards) {
+    this.discardPile.push(...cards);
   }
 
   findAndDiscard(cards) {
@@ -2402,6 +2421,35 @@ class CardDeck {
         return cJson === cardJson; 
       });
       this.discardPile.push(this.deck.splice(index, 1));
+    }
+  }
+
+  addDiscardsToBottom() {
+    this.deck.push(...this.discardPile);
+    this.discardPile = [];
+  }
+
+  shuffleDeck() {
+    this.deck = drawRandom(this.deck.length);
+  }
+
+  shuffleInDiscards() {
+    this.addDiscardsToBottom();
+    this.shuffleDeck();
+  }
+}
+
+class StartingUnitsCardDeck extends CardDeck {
+  constructor(numUnitsPerPlayer, numPlayers) {
+    super();
+    for (let i = 0; i < numPlayers; i++) {
+      this.addCards(numUnitsPerPlayer, i);    
+    }
+  }
+
+  addCards(numCards, playerId) {
+    for (let i = 0; i < numCards; i++) {
+      this.addCard(playerId);    
     }
   }
 }
@@ -2421,6 +2469,13 @@ class BonusCardDeck extends CardDeck {
     for (let i = 0; i < numCards; i++) {
       this.addCard({ numFollowers: numFollowers, numArtifacts: numArtifacts });    
     }
+  }
+  
+  peekRandom(numToPeekAt) {
+    if (this.numCardsInDeck() < numToPeekAt) {
+      this.addDiscardsToBottom();
+    }
+    return CardDeck.peekRandom(numToPeekAt);
   }
 }
 
@@ -2662,7 +2717,7 @@ class AncientLoreEventGenerator {
       }
     };
     
-    let bonusCards = bonusCardDeck.peek(3);
+    let bonusCards = bonusCardDeck.peekRandom(3);
     let beginVotingFn = () => {
       this.sendRevealLore(selectedLoreI, bonusCards, allocation);
     };
