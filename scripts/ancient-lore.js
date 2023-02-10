@@ -546,13 +546,16 @@ class AncientLoreGame extends BasicGame {
       this.coordinator.end(v, m);  
       // Clear any selections left over from the activity that has ended.
       v.generator.clearSelectionOptions();
+      v.board.clearLoreHighlight();
       this.coordinator = m.activity.makeCoordinator();
       this.coordinator.begin(v, m);
     }
     this.coordinator.update(v, m);
     
     const displayOthersActions = m.activity instanceof TurnActivity;
-    this.playerList.update(m.peers, m.players, displayOthersActions);
+    this.playerList.update(
+      m.peers, m.players, displayOthersActions, m.activity.promptText()
+    );
 
     this.board.updateLocations(m.myPlayerId, m.locations);
     this.board.updateProclaimedLore(m.proclaimedLore);
@@ -570,7 +573,7 @@ class PlayerList  {
     this.peers = [];
   }
 
-  update(peers, players, displayOthersActions) {
+  update(peers, players, displayOthersActions, prompt) {
     this.playerListElement.innerHTML = "";
 
     for (let rank = 0; rank < players.length; ++rank) {
@@ -586,6 +589,8 @@ class PlayerList  {
         this.display(peer.playerName, player);
       }
     }
+
+    this.displayPrompt(players, prompt);
   }
 
   display(playerName, player, playerId, displayOthersActions) {
@@ -644,6 +649,31 @@ class PlayerList  {
       case "invade": return "Invade";
       default: return "No action";
     }
+  }
+
+  displayPrompt(players, prompt) {
+    if (!prompt || prompt == "") return;
+    
+    let para = document.createElement("p");
+    para.style.fontSize = "small";
+    
+    let activePlayerNames = [];
+    for (const player of players) {
+      if (player.isActive) {
+        if (this.myPlayerName == player.name) {
+          para.style.fontWeight = "bold";
+        }
+        activePlayerNames.push(player.name);
+      }
+    }
+    
+    let nameNode = document.createTextNode(activePlayerNames.join(", ") + ": ");
+    para.appendChild(nameNode);
+    
+    let promptNode = document.createTextNode(prompt);
+    para.appendChild(promptNode);
+
+    this.playerListElement.appendChild(para);
   }
 }
 
@@ -1023,6 +1053,10 @@ class Activity {
   }
 
   // makeCoordinator() = 0
+
+  promptText() {
+    return "";
+  }
 }
 
 
@@ -1184,6 +1218,10 @@ class ActionSelectionActivity extends Activity {
     m.clearSelectedActions();
 
     this.isInExtraTime = false;
+  }
+
+  promptText() {
+    return "Select a location and an action."
   }
 
   makeCoordinator() {
@@ -1403,7 +1441,7 @@ class MovementTurnActivity extends TurnActivity {
   constructor(m, turn) {
     super(m, turn);
   }
-  
+
   sanitizeMovements(playerId, movements, m) {
     movements.totalMoved = 0;
     for (let movement of movements) {
@@ -1438,6 +1476,10 @@ class MovementTurnActivity extends TurnActivity {
 class MoveTurnActivity extends MovementTurnActivity {
   constructor(m, turn) {
     super(m, turn);
+  }
+  
+  promptText() {
+    return "Choose how many units from each nearby location."
   }
 
   makeCoordinator() {
@@ -1482,6 +1524,10 @@ class ProclaimTurnActivity extends TurnActivity {
         this.playersWithKeeper.push({playerId: i, playerName: m.players[i].name});
       }
     }
+  }
+  
+  promptText() {
+    return "Select a piece of lore in the location."
   }
   
   makeCoordinator() {
@@ -1530,6 +1576,10 @@ class ProclaimTurnVoteActivity extends TurnActivity {
     for (const playerWithKeeper of this.playersWithKeeper) {
       m.players[playerWithKeeper.playerId].isActive = true;
     }
+  }
+  
+  promptText() {
+    return "Choose whether to proclaim the revealed lore."
   }
   
   makeCoordinator() {
@@ -1605,7 +1655,6 @@ class ProclaimTurnVoteActivityCoordinator extends TurnActivityCoordinator {
 
   end(v, m) {
     v.generator.showVotes(this.activity.playersWithKeeper);
-    v.board.clearLoreHighlight();
   }
 }
 
@@ -1617,6 +1666,10 @@ class RegroupTurnActivity extends MovementTurnActivity {
     if (location.players[turn.playerId].numUnits == 0) {
       return { isValid: false }; // This is not a valid turn, skip it.
     }
+  }
+  
+  promptText() {
+    return "Choose how many units from each location."
   }
   
   makeCoordinator() {
@@ -2475,7 +2528,7 @@ class BonusCardDeck extends CardDeck {
     if (this.numCardsInDeck() < numToPeekAt) {
       this.addDiscardsToBottom();
     }
-    return CardDeck.peekRandom(numToPeekAt);
+    return super.peekRandom(numToPeekAt);
   }
 }
 
@@ -3466,11 +3519,13 @@ class LoreSelection extends BoardSelection {
 
   start(locationId, onSelected) {
     this.highlighter = new LoreHighlighter(this.board);
+    this.highlighter.clear();
 
     let lorePieces = this.board.querySelectorAll(
       ".settlement" + locationId + " .loreDisplay"
     );
     for (let lorePiece of lorePieces) {
+      this.highlighter.highlightElement(lorePiece, "#009900");
       let clickHandler = {
         element: lorePiece,
         fn: (event) => {
@@ -3484,7 +3539,6 @@ class LoreSelection extends BoardSelection {
       this.addClickHandler(clickHandler);
     }
     
-    this.highlighter.clear();
   }
 }
 
@@ -3503,10 +3557,11 @@ class LoreHighlighter {
   }
 
   updateElement(loreElement, colour) {
-    for (let highlight of this.highlights) {
-      highlight.style.visibility = "hidden";
-    }
+    this.clear();
+    this.highlightElement(loreElement, colour);
+  }
 
+  highlightElement(loreElement, colour) {
     if (loreElement) {
       let highlight = loreElement.querySelector(".highlight")
       if (highlight) {
@@ -3517,7 +3572,9 @@ class LoreHighlighter {
   }
 
   clear() {
-    this.updateElement();
+    for (let highlight of this.highlights) {
+      highlight.style.visibility = "hidden";
+    }
   }
 }
 
@@ -3560,6 +3617,7 @@ class BonusCardAllocation extends CardSelection {
 
     this.onAllocatedFn = onAllocatedFn;
     this.unallocated = this.buildColumn("Unallocated");
+    this.unallocated.column.style.flexGrow = "2";
 
     // Find the bonus cards to allocate.
     for (let bonusCard of bonusCards) {
