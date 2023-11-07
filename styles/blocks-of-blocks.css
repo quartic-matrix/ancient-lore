@@ -1,0 +1,83 @@
+
+body {
+  background-color: rgb(233, 233, 233);
+  font-family: 'Trirong';
+  margin: 0;
+}
+
+#board {
+  border-style: solid;
+  border-color: rgb(165, 165, 165);
+  border-width: medium 0;
+  display:flex;
+  flex-flow: column;
+}
+
+#pieces {
+  border-style: solid;
+  border-color: rgb(165, 165, 165);
+  border-width: medium 0;
+  display:flex;
+  flex-flow: row;
+  flex-wrap: wrap;
+  flex-shrink: 1;
+}
+
+.piece {
+  padding: 0.1em;
+  flex-shrink: 1;
+}
+
+#board .row {
+  border: none;
+}
+
+.row {
+  display:flex;
+  flex-flow: row;
+  flex-grow:1;
+}
+
+.cell {
+  flex-grow:0;
+  height: 2em;
+  width: 2em;
+}
+
+#board .cell {
+  background-color: rgb(230, 230, 230);
+}
+#board .cell.darker {
+  background-color: rgb(220, 220, 220);
+}
+#board .cell.group {
+  background-color: rgb(190, 190, 190);
+}
+#board .cell.group.darker {
+  background-color: rgb(200, 200, 200);
+}
+
+#board .cell.filled {
+  background-color: rgb(0, 200, 200);
+}
+#board .cell.darker.filled {
+  background-color: rgb(0, 190, 190);
+}
+#board .cell.group.filled {
+  background-color: rgb(0, 160, 160);
+}
+#board .cell.group.darker.filled {
+  background-color: rgb(0, 170, 170);
+}
+
+.piece .cell.filled {
+  background-color: rgba(156, 76, 0, 0.7);
+}
+
+.piece.no-fit .cell.filled {
+  background-color: rgba(156, 75, 0, 0.3);
+}
+
+h1 {
+  color: rgb(56, 56, 56);
+}
