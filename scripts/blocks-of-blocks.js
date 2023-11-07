@@ -46,12 +46,19 @@ function dragPiece(dX, dY) {
     }
 }
 
-document.addEventListener("mousemove", e => {
-    dragPiece(e.clientX - mouseX, e.clientY - mouseY);
+function onMouseMove(clientX, clientY) {
+    dragPiece(clientX - mouseX, clientY - mouseY);
 
-    mouseX = e.clientX;
-    mouseY = e.clientY;
+    mouseX = clientX;
+    mouseY = clientY;
+}
+document.addEventListener("mousemove", e => {
+    onMouseMove(e.clientX, e.clientY);
 });
+document.addEventListener("touchmove", e => {
+    onMouseMove(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+});
+
 
 document.addEventListener("keypress", e => {
     if (e.key == "n") {
@@ -179,18 +186,26 @@ function createPiece() {
     // 
     // 
 
-      pieceEle.addEventListener("mousedown", (event) => {
+    let onMouseDownFn = (event, clientX, clientY) => {
         event.stopPropagation();
         dragPieceEle = pieceEle;
-        offsetX = pieceEle.offsetLeft - event.clientX;
-        offsetY = pieceEle.offsetTop - event.clientY;
-      });
+        offsetX = pieceEle.offsetLeft - clientX;
+        offsetY = pieceEle.offsetTop - clientY;
+    };
+    pieceEle.addEventListener("mousedown", e => {
+        onMouseDownFn(e, e.clientX, e.clientY);
+    });
+    pieceEle.addEventListener("touchstart", e => {
+        onMouseDownFn(e, e.touches[0].clientX, e.touches[1].clientY);
+    });
 
-      pieceEle.addEventListener("mouseup", (event) => {
+    let onMouseUpFn = (event) => {
         event.stopPropagation();
         dragPieceEle = undefined;
         dropPiece(pieceEle);
-      });
+    };
+    pieceEle.addEventListener("mouseup", e => onMouseUpFn(e));
+    pieceEle.addEventListener("touchend", e => onMouseUpFn(e));
 
     return pieceEle;
 }
