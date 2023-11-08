@@ -196,7 +196,7 @@ function createPiece() {
         onMouseDownFn(e, e.clientX, e.clientY);
     });
     pieceEle.addEventListener("touchstart", e => {
-        alert("touchstart at " + e.touches[0].clientX.toString() + ", " + e.touches[1].clientY.toString() );
+        alert("touchstart at " + e.touches[0].clientX.toString() + ", " + e.touches[0].clientY.toString() );
         onMouseDownFn(e, e.touches[0].clientX, e.touches[1].clientY);
     });
 
