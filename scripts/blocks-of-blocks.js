@@ -43,20 +43,24 @@ function dragPiece(dX, dY) {
         dragPieceEle.style.position = "absolute";
         dragPieceEle.style.left = (mouseX + offsetX) + 'px';
         dragPieceEle.style.top = (mouseY + offsetY) + 'px';
+        return true;
     }
+    return false;
 }
 
-function onMouseMove(clientX, clientY) {
-    dragPiece(clientX - mouseX, clientY - mouseY);
+function onMouseMove(e, clientX, clientY) {
+    if (dragPiece(clientX - mouseX, clientY - mouseY)){
+        e.stopPropagation();
+    }
 
     mouseX = clientX;
     mouseY = clientY;
 }
 document.addEventListener("mousemove", e => {
-    onMouseMove(e.clientX, e.clientY);
+    onMouseMove(e, e.clientX, e.clientY);
 });
 document.addEventListener("touchmove", e => {
-    onMouseMove(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+    onMouseMove(e, e.changedTouches[0].clientX, e.changedTouches[0].clientY);
 });
 
 
@@ -196,7 +200,6 @@ function createPiece() {
         onMouseDownFn(e, e.clientX, e.clientY);
     });
     pieceEle.addEventListener("touchstart", e => {
-        alert("touchstart at " + e.touches[0].clientX.toString() + ", " + e.touches[0].clientY.toString() );
         onMouseDownFn(e, e.touches[0].clientX, e.touches[0].clientY);
     });
 
