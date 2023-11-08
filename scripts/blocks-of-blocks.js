@@ -6,6 +6,8 @@ let board = [];
 let count = 0;
 
 function setupBoard() {
+    updateCountDisplay();
+
     for (let rowI = 0; rowI < 9; rowI++) {
         let row = document.createElement("div");
         row.classList.add("row");
@@ -142,31 +144,30 @@ function generatePieceDef() {
         shiftY = Math.min(shiftY, cellY);
     }
 
-    let maxX = 0;
-    let maxY = 0;
+    piece.numRows = 0;
+    piece.numCols = 0;
     for (let cell of piece) {
         cell[0] -= shiftX;
         cell[1] -= shiftY;
         
-        maxX = Math.max(maxX, cell[0]);
-        maxY = Math.max(maxY, cell[1]);
+        piece.numRows = Math.max(piece.numRows, cell[0]);
+        piece.numCols = Math.max(piece.numCols, cell[1]);
     }
 
-    return [piece, maxX, maxY];
+    return piece;
 }
 
 function createPiece() {
     let pieceEle = document.createElement("div");
     pieceEle.classList.add("piece");
-    let [pieceDef, maxX, maxY] = generatePieceDef();
-    pieceEle.pieceDef = pieceDef;
+    pieceEle.pieceDef = generatePieceDef();
     pieceEle.numCells = 0;
 
-    for (let rowI = 0; rowI <= maxX; rowI++) {
+    for (let rowI = 0; rowI <= pieceEle.pieceDef.numRows; rowI++) {
         let row = document.createElement("div");
         row.classList.add("row");
 
-        for (let colI = 0; colI <= maxY; colI++) {
+        for (let colI = 0; colI <= pieceEle.pieceDef.numCols; colI++) {
             let cell = document.createElement("div");
             cell.classList.add("cell");
             cell.classList.add("row" + rowI);
@@ -239,6 +240,11 @@ function willItFit(pieceEle, dropRowI, dropColI) {
     return cells;
 }
 
+function updateCountDisplay() {
+    let countEle = document.getElementById("count");
+    countEle.innerHTML = "<span><b>" + count.toString() + "</b></span>";
+}
+
 function dropPiece(pieceEle) {
     let cellDX = board[0][1].offsetLeft - board[0][0].offsetLeft;
     let cellDY = board[1][0].offsetTop - board[0][0].offsetTop;
@@ -254,8 +260,7 @@ function dropPiece(pieceEle) {
     }
 
     count += pieceEle.numCells;
-    let countEle = document.getElementById("count");
-    countEle.innerHTML = "<span><b>" + count.toString() + "</b></span>";
+    updateCountDisplay();
 
     pieceEle.remove();
     addPieces();

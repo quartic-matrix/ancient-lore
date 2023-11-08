@@ -11,6 +11,7 @@ body {
   border-width: medium 0;
   display:flex;
   flex-flow: column;
+  flex-shrink: 1;
 }
 
 #pieces {
@@ -21,6 +22,7 @@ body {
   flex-flow: row;
   flex-wrap: wrap;
   flex-shrink: 1;
+  max-width: 98vw;
 }
 
 .piece {
@@ -40,8 +42,10 @@ body {
 
 .cell {
   flex-grow:0;
-  height: 2em;
-  width: 2em;
+  aspect-ratio: 1;
+  width: 10vw;
+  max-width: 5vh;
+  max-height: 5vh;
 }
 
 #board .cell {
