@@ -1,5 +1,6 @@
 
 body {
+  overscroll-behavior: contain;
   background-color: rgb(233, 233, 233);
   font-family: 'Trirong';
   margin: 0;
